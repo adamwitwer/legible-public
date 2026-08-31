@@ -1,0 +1,56 @@
+Personal notes app
+
+Problem the app must solve: I take notes with a pen and paper, which helps me focus. However, I often struggle to find past notes quickly. I want to be able to digitize all notes and then quickly find them via a keyword or date search.
+
+Users: 1 (me)
+
+App features:
+* Scan and OCR notes via camera phone.
+* Store in a searchable database.
+* VERY fast in finding text via search.
+* Additionally, can simply create and type in notes within the app interface itself.
+* Emphasis on simplicity and speed.
+* Look and feel - old school terminal/console feel. Should be fun to use.
+* Cross compatibility - useable on any mac, pc, phone, etc.
+* Other ideas welcome! This is a collab!
+* ADDED REQUIREMENT: Must be able to edit existing notes in the app.
+
+Platforms available: We have a Render account that runs our Crits and Fumbles account. If possible, I'd prefer to stay there. But open to other ideas, too. Our usual GitHub account for version control.  
+
+Planning Stage Questions
+
+How legible is your handwriting, really?
+The single largest unknown, and the reason Phase 0 exists. Cursive, heavy abbreviation, and marginalia are the hard cases.
+
+→ Send me 3–4 photos of real pages and I'll run them before we write any code.
+
+ANSWER: See the images/ dir for examples. (Those four pages are written for the repo — my hand, invented content — so the repo can be public while the archive is not.) Please don't feel the need to mimic exactly. I sometimes use arrows and write in the margins. Let's keep it simple.
+
+How big is the backlog?
+It sets the one-time OCR bill and decides whether bulk import is a Phase 3 feature or a throwaway script.
+
+→ A rough page count is enough.
+
+ANSWER: 200ish? If we're going to retain the images of the notes, perhaps we should consider using my Dropbox account or even SCPing them to one of my servers. We could do this via the Tailnet. Just an idea.
+
+Is a "note" a page or an entry?
+I've assumed an entry — one note, several page images — because that's what makes search results meaningful. If your notebooks are one self-contained thought per page, note-per-page is simpler.
+
+→ Assuming multi-page unless you say otherwise.
+
+ANSWER: See examples, please.
+
+
+Cloudflare R2, or keep it all on Render?
+R2 means a second account and a second set of credentials. The alternative — images as bytea in Postgres — is one less service, but bloats the database and its backups significantly once you're a few gigabytes in.
+
+→ Recommending R2. Happy to go all-Render if you'd rather keep it to one bill.
+
+That's fine. I already have a Cloudflare account. We can use that.
+
+Does the terminal aesthetic apply to reading, or only to searching?
+Monospace everywhere is more authentic; a proportional face for note bodies is markedly easier on a long entry. This page splits the difference as a proposal.
+
+→ Easy to change later; worth an opinion now.
+
+Proportional fonts for body text makes more sense. 

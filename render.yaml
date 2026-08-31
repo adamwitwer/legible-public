@@ -1,0 +1,63 @@
+# Legible — single Render web service serving both the API and the PWA.
+#
+# Why one service rather than the Static Site + Web Service split in
+# ARCHITECTURE.md draft 02: WebAuthn scopes a passkey to a relying-party ID,
+# which must be the registrable domain. A split origin
+# (legible.onrender.com + legible-api.onrender.com) would need an RP ID of
+# onrender.com — but that is on the Public Suffix List, so browsers refuse it.
+# Same-origin also removes CORS and SameSite=None from the session cookie.
+# On a custom domain the split becomes possible again; it is not worth it.
+
+services:
+  - type: web
+    name: legible
+    runtime: node
+    plan: starter          # NOT free: free instances cold-start in tens of
+                           # seconds, which breaks the whole point of the app.
+    region: oregon
+    branch: main
+    # --include=dev is load-bearing: NODE_ENV=production below applies during
+    # the build too, and npm omits devDependencies under it. The build needs
+    # typescript, vite and the @types packages, all of which are dev deps.
+    # Without this the install quietly drops them and a *global* tsc on the
+    # build image compiles the app with no type declarations present.
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run migrate && npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SERVE_STATIC
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: legible-db
+          property: connectionString
+      # RP_ID and ORIGIN are deliberately absent: they default to Render's own
+      # RENDER_EXTERNAL_HOSTNAME / RENDER_EXTERNAL_URL, so the passkey relying
+      # party always matches the URL actually served. Set them explicitly only
+      # when moving to a custom domain — and note that changing RP_ID
+      # invalidates every passkey already enrolled.
+      - key: ENROLL_CODE
+        generateValue: true
+      - key: RP_NAME
+        value: Legible
+      # Page images must live off-box: Render's filesystem is ephemeral, so
+      # local blobs would disappear on every deploy. The server refuses to
+      # start in production unless all four of these are set.
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+databases:
+  - name: legible-db
+    plan: basic-256mb      # free Postgres expires; this archive is permanent
+    region: oregon
+    postgresMajorVersion: "17"

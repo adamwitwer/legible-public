@@ -1,0 +1,499 @@
+/* Legible — amber phosphor on warm near-black.
+   Monospace for chrome; proportional for note bodies (per the PRD answer). */
+
+:root {
+  --ground: #14100b;
+  --panel: #1c170f;
+  --panel-2: #221b12;
+  --rule: #382e20;
+  --amber: #ffb454;
+  --amber-dim: #b98b4a;
+  --text: #e9dcc4;
+  --muted: #8a7a61;
+  --ok: #8fbf6f;
+  --risk: #e0705f;
+
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+  overflow: hidden;
+}
+
+/* Scanlines, kept faint enough to read through. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0.3;
+  background: repeating-linear-gradient(
+    to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.26) 2px 3px
+  );
+}
+
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+.booting { display: grid; place-items: center; height: 100%; color: var(--muted); }
+
+/* ------------------------------------------------------------------ app */
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  /* minmax(0,…) rather than the default `auto`: a child wider than the screen
+     would otherwise stretch the column past the viewport and take the whole app
+     sideways with it, instead of being clipped or ellipsised where it sits. */
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 clamp(0.75rem, 3vw, 2rem);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.85rem;
+  padding: 1rem 0 0.7rem;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.bar-brand { color: var(--amber); }
+.bar-count { color: var(--muted); }
+.bar-rule { flex: 1; border-top: 1px solid var(--rule); }
+.bar-sync { color: var(--muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+/* Dim on purpose: wanted when you are asking "which build is this?", and out of
+   the way every other time. */
+.bar-build {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+/* -------------------------------------------------------------- results */
+
+.results { overflow-y: auto; padding: 0.9rem 0; display: flex; flex-direction: column; }
+.results.empty { justify-content: center; align-items: center; color: var(--muted); text-align: center; }
+.dim { color: var(--muted); }
+
+.hit {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr auto;
+  grid-template-areas: "date title kind" ".  snippet snippet";
+  gap: 0.15rem 0.9rem;
+  text-align: left;
+  padding: 0.5rem 0.7rem;
+  border-left: 2px solid transparent;
+}
+.hit:hover { background: var(--panel); }
+.hit[data-active="true"] { background: var(--panel); border-left-color: var(--amber); }
+
+.hit-date { grid-area: date; color: var(--ok); font-variant-numeric: tabular-nums; }
+.hit-title { grid-area: title; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hit-kind { grid-area: kind; color: var(--muted); font-size: 0.75rem; }
+.hit-snippet {
+  grid-area: snippet;
+  font-family: var(--sans);
+  color: var(--muted);
+  font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------- prompt */
+
+.prompt {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border-top: 1px solid var(--rule);
+  padding: 0.85rem 0 calc(0.85rem + env(safe-area-inset-bottom));
+}
+.prompt-caret { color: var(--amber); }
+.prompt-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  caret-color: var(--amber);
+}
+.prompt-input:focus { outline: none; }
+.prompt-input::placeholder { color: var(--muted); }
+.prompt-meta { color: var(--muted); font-size: 0.75rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* The scan button. A <label> rather than a <button> because it has to be the
+   file input's own label — see App.tsx. */
+.prompt-scan {
+  color: var(--amber);
+  border: 1px solid var(--amber-dim);
+  padding: 0.3rem 0.7rem;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.prompt-scan:hover { background: var(--panel); }
+
+/* --------------------------------------------------------------- editor */
+
+.editor { display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; padding: 0.9rem 0; gap: 0.7rem; }
+
+.editor-bar { display: flex; align-items: center; gap: 0.9rem; font-size: 0.78rem; color: var(--muted); }
+.editor-date { color: var(--ok); font-variant-numeric: tabular-nums; }
+
+/* Title and date are editable in place. They read as text until you reach for
+   them, so the bar stays a header rather than turning into a form. */
+.editor-title,
+.editor-dateinput {
+  font: inherit;
+  color: var(--ok);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  padding: 0.1rem 0.3rem;
+}
+.editor-title {
+  min-width: 8rem;
+  max-width: 22rem;
+  flex: 0 1 auto;
+  color: var(--amber);
+}
+.editor-title::placeholder { color: var(--muted); font-style: italic; }
+.editor-dateinput {
+  font-variant-numeric: tabular-nums;
+  /* An explicit width on purpose: WebKit gives input[type=date] a wide
+     intrinsic size that will not shrink, which pushed the bar past the
+     viewport on iOS and took the actions off-screen with it. */
+  width: 9.5rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.editor-title:hover,
+.editor-dateinput:hover { border-color: var(--rule); }
+.editor-title:focus,
+.editor-dateinput:focus { border-color: var(--amber-dim); outline: none; background: var(--panel); }
+/* The picker glyph is near-black on the dark ground by default. */
+.editor-dateinput::-webkit-calendar-picker-indicator { filter: invert(0.7) sepia(1) saturate(3) hue-rotate(5deg); cursor: pointer; }
+.editor-status.ok { color: var(--muted); }
+.editor-status.pending { color: var(--amber); }
+.editor-actions { margin-left: auto; display: flex; gap: 1rem; }
+.linkish { color: var(--amber-dim); }
+.linkish:hover { color: var(--amber); }
+.linkish.danger:hover { color: var(--risk); }
+
+.editor-body {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;   /* grid items default to min-width:auto, i.e. min-content */
+  height: 100%;
+  resize: none;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  color: var(--text);
+  padding: 1.1rem 1.25rem;
+  font-family: var(--sans);   /* proportional for reading; chrome stays mono */
+  font-size: 1rem;
+  line-height: 1.7;
+}
+.editor-body:focus { outline: none; border-color: var(--amber-dim); }
+.editor-body::placeholder { color: var(--muted); }
+
+.revisions { border-top: 1px solid var(--rule); padding-top: 0.6rem; max-height: 30vh; overflow-y: auto; }
+.revisions-head { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); padding-bottom: 0.4rem; }
+.revisions-empty { color: var(--muted); font-size: 0.82rem; }
+.revision { display: flex; gap: 0.9rem; width: 100%; text-align: left; padding: 0.35rem 0.4rem; font-size: 0.8rem; }
+.revision:hover { background: var(--panel); }
+.revision-when { color: var(--amber-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.revision-peek { color: var(--muted); font-family: var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ----------------------------------------------------------------- auth */
+
+.auth {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem;
+}
+.auth-boot { margin: 0 0 0.5rem; color: var(--amber-dim); font-size: 0.82rem; line-height: 1.8; text-align: center; }
+.auth-label { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.auth-input {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  color: var(--text);
+  font: inherit;
+  padding: 0.55rem 0.8rem;
+  min-width: 15rem;
+  text-align: center;
+}
+.auth-input:focus { outline: none; border-color: var(--amber-dim); }
+.btn {
+  border: 1px solid var(--amber-dim);
+  color: var(--amber);
+  padding: 0.55rem 1.3rem;
+  background: var(--panel);
+}
+.btn:hover:not(:disabled) { background: var(--panel-2); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.auth-error { color: var(--risk); font-size: 0.84rem; max-width: 30rem; text-align: center; }
+
+/* ----------------------------------------------------------------- misc */
+
+.wide-only { display: inline; }
+.narrow-only { display: none; }
+
+@media (max-width: 640px) {
+  .hit { grid-template-columns: 5.5rem 1fr; grid-template-areas: "date title" "snippet snippet"; }
+  .hit-kind { display: none; }
+  /* One ellipsised line loses most of the snippet on a narrow screen. Let it
+     wrap, capped at three lines so the list stays scannable, and break inside
+     a long unbroken run rather than pushing the row wide. */
+  .hit-snippet {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+  .prompt-meta { display: none; }
+  .wide-only { display: none; }
+  .narrow-only { display: inline; }
+
+  /* The hit/ms counter is gone on a phone, so the scan button takes the right
+     end of the prompt row — the far corner, which is where the thumb already
+     rests. */
+  .prompt { gap: 0.5rem; }
+  .prompt-scan { padding: 0.5rem 0.8rem; }
+
+  /* The bar is a single nowrap row and the build stamp is one span more of it.
+     The rule stays — being the one flexible child, it is what absorbs the
+     shortfall — and the sync text ellipsises into whatever is left. */
+  .bar { gap: 0.6rem; }
+
+  /* Actions are thumb-sized here, and the primary one is the wide one on the
+     right. 44px is the smallest target that is reliably hit one-handed. */
+  .capture-foot { gap: 0.7rem; }
+  .capture-foot .linkish { padding: 0.7rem 0; }
+  .capture-primary {
+    flex: 1 1 auto;
+    text-align: center;
+    padding: 0.75rem 1rem;
+    font-size: 0.95rem;
+  }
+
+  /* The page image is the ground truth for a transcript you are checking; a
+     64px thumbnail is too small to check anything against. */
+  .proposed-pages img { width: 27vw; height: 36vw; }
+  .proposed { padding: 0.8rem; }
+  /* Title on its own row, then the date and its badges — 12rem + 8.5rem does
+     not fit beside itself on a phone. */
+  .proposed-title { flex: 1 1 100%; min-width: 0; }
+  /* Thumb-sized without growing the row: padding on the button, not the text. */
+  .proposed-acts .linkish { padding: 0.4rem 0; }
+
+  /* The editor bar is a single nowrap row of title, date, status and four
+     actions — far past a phone's width, and the actions were the half that
+     fell off the end. Break it into stacked rows instead of letting it
+     overflow: title, then date and status, then the actions spread out. */
+  .editor-bar { flex-wrap: wrap; row-gap: 0.55rem; column-gap: 0.7rem; }
+  .editor-title { flex: 1 1 100%; min-width: 0; max-width: none; }
+  .editor-actions {
+    margin-left: 0;
+    flex: 1 1 100%;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  /* a little height so these are tappable, not just clickable */
+  .editor-actions .linkish { padding: 0.3rem 0; }
+  /* first in the row: if anything else ever overflows to the right, the way
+     back must still be the part you can reach */
+  .editor-actions .editor-back { order: -1; color: var(--amber); }
+
+  .editor-bar, .editor-title, .editor-status { min-width: 0; max-width: 100%; }
+
+  /* iOS Safari zooms the page when a focused control is under 16px. The zoom
+     shrinks the visual viewport, which reads as the layout being too wide and
+     scrolling sideways — and carries the editor actions out of reach with it.
+     Body is 14px and the editor bar 12.5px, so every control here qualified.
+     maximum-scale would also stop it, at the cost of pinch zoom. */
+  .editor-title,
+  .editor-dateinput,
+  .editor-body,
+  .prompt-input,
+  .auth-input,
+  .proposed-title,
+  .proposed-date,
+  .proposed-body { font-size: 16px; }
+
+  .editor-body { padding: 0.9rem 0.95rem; }
+
+  .devices { padding: 0.9rem 0; }
+  /* One block per passkey instead of a table to scroll sideways: the header
+     row goes, and each cell carries its own label. */
+  .devices-head { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+  .devices-table, .devices-table tbody, .devices-table tr, .devices-table td { display: block; }
+  .devices-table thead { display: none; }
+  .devices-table tr { border-bottom: 1px solid var(--rule); padding: 0.5rem 0; }
+  .devices-table td {
+    display: flex; justify-content: space-between; gap: 1rem;
+    padding: 0.12rem 0; white-space: normal;
+  }
+  .devices-table td::before { content: attr(data-label); color: var(--muted); }
+}
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* -------------------------------------------------------------- capture */
+
+/* Header, a scrolling middle, and an action bar pinned to the bottom. The
+   actions sit at the bottom because that is where a thumb is, and because
+   "save" in review is otherwise a scroll back past every proposed note. */
+.capture { display: grid; grid-template-rows: auto 1fr auto; min-height: 0; padding: 1rem 0 0; }
+.capture-scroll { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 1rem; padding: 0.9rem 0; }
+.capture-bar { display: flex; align-items: baseline; gap: 1rem; font-size: 0.8rem; flex-wrap: wrap; }
+.capture-title { color: var(--amber); }
+
+.capture-foot {
+  display: flex; align-items: center; gap: 1.1rem;
+  border-top: 1px solid var(--rule);
+  padding: 0.7rem 0 calc(0.7rem + env(safe-area-inset-bottom));
+}
+.capture-primary { margin-left: auto; padding: 0.45rem 1.1rem; font-size: 0.82rem; }
+/* Wrapping a two-word action onto two lines makes the bar jump a row; these
+   are short enough to keep on one. */
+.capture-foot > * { white-space: nowrap; }
+
+.capture-hint { max-width: 46ch; font-size: 0.82rem; margin: 0; }
+.capture-hint .linkish { cursor: pointer; }
+.capture-error { color: var(--risk); font-size: 0.84rem; margin: 0; }
+label.btn { display: inline-block; cursor: pointer; }
+
+.filmstrip { display: flex; gap: 0.6rem; overflow-x: auto; padding-bottom: 0.4rem; }
+.frame { position: relative; flex: 0 0 auto; width: 96px; border: 1px solid var(--rule); }
+.frame img { display: block; width: 100%; height: 128px; object-fit: cover; opacity: 0.45; }
+.frame.done img { opacity: 1; }
+.frame.failed { border-color: var(--risk); }
+.frame-status {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: rgba(20,16,11,0.88); color: var(--muted);
+  font-size: 0.62rem; text-align: center; padding: 0.15rem;
+}
+.frame.done .frame-status { color: var(--ok); }
+.frame.failed .frame-status { color: var(--risk); }
+
+/* --- boundary review --- */
+
+.review { gap: 1.4rem; }
+.proposed { border: 1px solid var(--rule); background: var(--panel); padding: 0.9rem 1rem; display: flex; flex-direction: column; gap: 0.7rem; }
+.proposed-head { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+.proposed-title {
+  flex: 1; min-width: 12rem;
+  background: none; border: none; border-bottom: 1px solid var(--rule);
+  color: var(--amber); font: inherit; padding: 0.2rem 0;
+}
+.proposed-date {
+  width: 8.5rem; background: none; border: none; border-bottom: 1px solid var(--rule);
+  color: var(--ok); font: inherit; padding: 0.2rem 0; font-variant-numeric: tabular-nums;
+}
+.proposed-title:focus, .proposed-date:focus { outline: none; border-bottom-color: var(--amber); }
+.proposed-acts { display: flex; align-items: center; gap: 0.7rem; margin-left: auto; }
+
+/* A discarded note keeps its place in the order — where it sat is what makes it
+   recognisable — but gives up its height, so the notes still being saved stay
+   readable as a set. */
+.proposed.dropped { opacity: 0.55; border-style: dashed; }
+.proposed.dropped .badge { background: var(--rule); color: var(--muted); }
+.dropped-title {
+  /* Two lines, not one with an ellipsis: at 320px a single line leaves about ten
+     characters, which is not enough to tell which note you discarded. */
+  flex: 1; min-width: 6rem; color: var(--muted); overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.badge {
+  font-size: 0.64rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ground); background: var(--amber-dim); padding: 0.12rem 0.4rem;
+}
+
+.proposed-pages { display: flex; gap: 0.5rem; overflow-x: auto; }
+.proposed-pages a { position: relative; flex: 0 0 auto; display: block; border: 1px solid var(--rule); }
+.proposed-pages img { display: block; width: 64px; height: 86px; object-fit: cover; }
+.midpage {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: var(--amber); color: var(--ground);
+  font-size: 0.55rem; text-align: center; padding: 0.1rem;
+}
+
+.proposed-body {
+  /* Height is set from the content — see TranscriptBox. */
+  /* auto, not hidden: if a measurement is ever wrong the box scrolls, which is
+     survivable, rather than clipping the end of a transcript, which is not. */
+  min-height: 6rem; resize: none; overflow-y: auto;
+  background: var(--panel-2); border: 1px solid var(--rule); color: var(--text);
+  font-family: var(--sans); font-size: 0.92rem; line-height: 1.65; padding: 0.75rem 0.9rem;
+}
+.proposed-body:focus { outline: none; border-color: var(--amber-dim); }
+
+.margin-notes { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.margin-note {
+  font-size: 0.74rem; color: var(--muted);
+  border: 1px solid var(--rule); border-left: 2px solid var(--amber-dim);
+  padding: 0.15rem 0.5rem;
+}
+.margin-note b { color: var(--amber-dim); font-weight: 500; text-transform: uppercase; font-size: 0.64rem; letter-spacing: 0.06em; }
+.margin-note i { color: var(--muted); font-style: normal; }
+
+/* ---------------------------------------------------------------- devices */
+
+.devices { padding: 1.1rem 1.3rem; overflow-y: auto; font-family: var(--mono); }
+.devices-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  border-bottom: 1px solid var(--rule); padding-bottom: 0.5rem; margin-bottom: 0.9rem;
+  color: var(--amber);
+}
+.devices-hint { color: var(--muted); font-size: 0.78rem; }
+.devices-empty { color: var(--muted); }
+/* The table is wider than a phone. Scroll it inside its own box rather than
+   letting the page scroll sideways. */
+.devices-scroll { overflow-x: auto; }
+.devices-table { border-collapse: collapse; font-size: 0.84rem; }
+.devices-table th {
+  text-align: left; font-weight: 400; color: var(--muted);
+  padding: 0.25rem 1.4rem 0.45rem 0; border-bottom: 1px solid var(--rule);
+}
+/* nowrap so the table keeps its natural width and the container scrolls,
+   rather than the columns squeezing into four-line dates */
+.devices-table th, .devices-table td { white-space: nowrap; }
+.devices-table td { padding: 0.4rem 1.4rem 0.4rem 0; color: var(--text); vertical-align: top; }
+/* scoped under td: the bare class loses to `.devices-table td` on specificity */
+/* the id is meant to be selected and pasted into :forget */
+.devices-table td.devices-id { color: var(--amber); user-select: all; }
+.devices-table td.devices-label { color: var(--muted); }
+.devices-table td.devices-never { color: var(--risk); }
+/* Scoped under td on purpose: a bare class loses to `.devices-table td` above,
+   which is how the id and never colours silently fell back the first time. */
+.devices-table td .devices-otherdomain { color: var(--risk); }
+.devices-table tr.devices-stale td { opacity: 0.65; }
+.devices-close { margin-top: 1.1rem; }
