@@ -8,7 +8,7 @@ import {
 } from '@simplewebauthn/server';
 import { sql } from '../db/index.js';
 import { env, isProd } from '../lib/env.js';
-import { decideEnroll } from '../lib/enroll.js';
+import { decideEnroll, overBudget } from '../lib/enroll.js';
 import { challengeFromResponse } from '../lib/webauthn.js';
 
 /**
@@ -203,11 +203,8 @@ export default async function authRoutes(app: FastifyInstance) {
         // attacker-chosen head of it, so the one security log in this system
         // would otherwise record whatever they cared to put there.
         req.log.warn({ chain: req.ips, socket: req.socket.remoteAddress }, 'bad enroll code');
-        // ttlInSeconds only exists on the refused branch of the union.
-        const budget = await enrollFailures(req);
-        return budget.isAllowed
-          ? { isAllowed: true, ttlInSeconds: 0 }
-          : { isAllowed: false, ttlInSeconds: budget.ttlInSeconds };
+        // overBudget, not `!isAllowed` — see the note on BudgetResult.
+        return overBudget(await enrollFailures(req));
       },
     });
     if (!decision.ok) {

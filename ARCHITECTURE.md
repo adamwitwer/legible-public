@@ -404,12 +404,20 @@ invented for this repo precisely so the repo can be public and the archive not.
   on ceremony endpoints — are keyed on `X-Forwarded-For`, which the caller writes. Anyone
   willing to rotate it walks past them, so they are protection against runaway clients and
   accidents, not against a deliberate attacker, and nothing security-critical rests on them.
-- **The enroll budget is charged only on a WRONG code**, against a bucket keyed to a
-  constant. Both halves matter. Keyed per IP it could be rotated past; charged on every
-  *attempt* it becomes a lockout — a stranger spends ten requests an hour and the owner,
-  arriving with the correct code, is turned away by a limiter that runs before the code is
-  read. That is the shared-mutable-state failure below, rebuilt one layer up. Charging only
-  failures means the owner never draws on a bucket a stranger can empty.
+- **The enroll code's entropy is what protects it, not a rate limit.** This took three
+  attempts to get right, so the reasoning is worth keeping. A budget consulted *before* the
+  code is compared would cap brute force — and any bucket a stranger can drain is a bucket
+  the owner can be locked out of, on the one documented way back into the archive after a
+  domain move. Keying it per IP does not escape that: under `trustProxy` the key is
+  caller-written, and a key derived from the proxy chain can collapse onto a shared upstream
+  address the owner also sits behind. There is no keying that both caps guessing and cannot
+  be used to lock the owner out.
+  So the code carries its own weight, the way an API token does: `env.ts` refuses to start
+  in production unless `ENROLL_CODE` is at least 16 characters and not the dev default.
+  `generateValue: true` in `render.yaml` satisfies that; a memorable value typed by hand is
+  the temptation it exists to refuse. The failure budget stays, charged only on a wrong
+  code — it is back-pressure and a log signal, not the control, and a stranger emptying it
+  costs the owner nothing because a correct code never consults it.
 - **One challenge row per ceremony**, keyed by the challenge value. Keyed by *kind* — the
   original design — the pending challenge was a single slot any unauthenticated caller
   could overwrite via `/login/start`, locking the real user out for as long as they kept

@@ -147,11 +147,18 @@ ever needs to mean "when the photo was taken" for another reason, add an explici
 ## Security
 
 **Auth hardening (2026-08-31).** Rate limits exist now. The per-IP floors are best-effort
-only — `X-Forwarded-For` is caller-written, so they stop accidents, not adversaries. The
-enroll code is guarded by a budget keyed to a constant and **charged only on a wrong code**
-(`lib/enroll.ts`, `decideEnroll`). Do not move that charge earlier or key it per IP: an
-onRequest limiter on a shared key lets a stranger lock the owner out of the one documented
-way back into the archive. `enroll.test.ts` asserts exactly that.
+only — `X-Forwarded-For` is caller-written, so they stop accidents, not adversaries. **The enroll code is protected by its entropy, not by a rate limit** — `env.ts` refuses to
+start in production on anything under 16 chars. That is deliberate: every way of keying a
+pre-check budget either can be rotated past or can be drained by a stranger to lock the
+owner out of the one documented way back into the archive. The failure budget in
+`lib/enroll.ts` is charged only on a wrong code and is back-pressure, not the control.
+Don't "fix" it by moving the charge ahead of the comparison — read the note in
+`decideEnroll` first. `enroll.test.ts` pins both properties.
+
+**When reading @fastify/rate-limit's result, `isAllowed` is not the field you want.** It is
+true only for allowList hits; `isExceeded` is the real signal. Translate through
+`overBudget()`, and test against fixtures of the library's actual shapes — a mock with
+invented semantics is how this shipped wrong once already.
 WebAuthn challenges are stored one row per ceremony keyed by the challenge value — keyed
 by kind, a stranger could overwrite the pending challenge and lock Adam out with no
 credential at all. `ENROLL_CODE` now refuses to fall back to its dev value in production.

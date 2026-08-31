@@ -1,4 +1,4 @@
-import { decideEnroll } from './enroll.js';
+import { decideEnroll, overBudget } from './enroll.js';
 
 let pass = 0, fail = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -15,10 +15,24 @@ const budget = (allowed: number) => {
     state,
     spend: async () => {
       state.spent++;
-      return { isAllowed: state.spent <= allowed, ttlInSeconds: 3600 };
+      return { overLimit: state.spent > allowed, retryAfter: 3600 };
     },
   };
 };
+
+// These two objects are the ONLY shapes @fastify/rate-limit 11.2.0 returns.
+// The previous version of this file invented a third shape with semantics the
+// library does not have, the code was written against the invention, and the
+// tests agreed with the bug all the way to a review. Fixtures first now.
+console.log('\nreading the rate limiter\'s answer (the field is not the obvious one)');
+check('an allowList hit is the ONLY isAllowed:true, and is not over limit',
+  overBudget({ isAllowed: true }), { overLimit: false, retryAfter: 0 });
+check('under the limit still reports isAllowed:false — isExceeded is the signal',
+  overBudget({ isAllowed: false, isExceeded: false, ttlInSeconds: 42 }),
+  { overLimit: false, retryAfter: 42 });
+check('over the limit',
+  overBudget({ isAllowed: false, isExceeded: true, ttlInSeconds: 3600 }),
+  { overLimit: true, retryAfter: 3600 });
 
 console.log('\nbootstrap: the enroll code is the only way in');
 {
@@ -43,6 +57,9 @@ console.log('\nthe budget caps guessing without locking the owner out');
   for (let i = 0; i < 3; i++) {
     await decideEnroll({ bootstrapped: false, authenticated: false, supplied: `guess-${i}`, expected: CODE, spendFailure: b.spend });
   }
+  check('wrong codes UNDER the budget are refused as wrong, not rate-limited',
+    await decideEnroll({ bootstrapped: false, authenticated: false, supplied: 'x', expected: CODE, spendFailure: budget(10).spend }),
+    { ok: false, code: 403, error: 'bad_enroll_code' });
   check('a further wrong code is rate-limited, not merely refused',
     await decideEnroll({ bootstrapped: false, authenticated: false, supplied: 'guess-4', expected: CODE, spendFailure: b.spend }),
     { ok: false, code: 429, error: 'too_many_enroll_attempts', retryAfter: 3600 });
