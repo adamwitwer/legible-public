@@ -42,7 +42,11 @@ export function challengeFromResponse(response: unknown): string | null {
  * that stands between a stranger and the whole archive, so it does not get
  * compared with an operator that returns early.
  */
-export function safeEqual(a: string, b: string): boolean {
+export function safeEqual(a: unknown, b: string): boolean {
+  // `a` arrives straight off a JSON body, so it is whatever the caller sent.
+  // Buffer.from throws on a number or an object, and an unhandled throw here is
+  // an unauthenticated 500 on the enrol path.
+  if (typeof a !== 'string') return false;
   const ab = Buffer.from(a, 'utf8');
   const bb = Buffer.from(b, 'utf8');
   // timingSafeEqual throws on length mismatch, which would itself be a signal.

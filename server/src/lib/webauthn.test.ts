@@ -35,5 +35,15 @@ check('empty vs non-empty', safeEqual('', 'x'), false);
 check('a prefix is not a match', safeEqual('secret', 'secretsauce'), false);
 check('unicode compares by bytes', safeEqual('café', 'café'), true);
 
+// safeEqual takes its first argument straight off a JSON body, so it is
+// whatever the caller sent. Buffer.from throws on a number or an object, and an
+// unhandled throw on the enrol path is an unauthenticated 500.
+check('a number does not throw', safeEqual(42 as unknown as string, 'x'), false);
+check('an object does not throw', safeEqual({ a: 1 } as unknown as string, 'x'), false);
+check('an array does not throw', safeEqual(['x'] as unknown as string, 'x'), false);
+check('a boolean does not throw', safeEqual(true as unknown as string, 'x'), false);
+check('null does not throw', safeEqual(null as unknown as string, 'x'), false);
+check('undefined does not throw', safeEqual(undefined as unknown as string, 'x'), false);
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

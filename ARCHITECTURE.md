@@ -400,11 +400,16 @@ invented for this repo precisely so the repo can be public and the archive not.
 - **Passkey auth** (WebAuthn) — Face ID on the phone, Touch ID on the Mac. Bootstrap
   enrollment with a one-time code from an env var; session is an HttpOnly, SameSite=Lax
   cookie. It is one user; do not build an identity system.
-- **Rate limits, and what they are keyed to.** 300/min per IP globally, 20/min per IP on
-  the ceremony endpoints, and **10/hour globally — not per IP — on enroll**. The last one
-  is the only cap that has to hold: `X-Forwarded-For` is attacker-controlled, so a per-IP
-  limit on the enroll code can be sidestepped by rotating the header, while a global one
-  cannot. Legitimate enrolment happens about twice a year.
+- **Rate limits, and what they actually buy.** The per-IP caps — 300/min globally, 20/min
+  on ceremony endpoints — are keyed on `X-Forwarded-For`, which the caller writes. Anyone
+  willing to rotate it walks past them, so they are protection against runaway clients and
+  accidents, not against a deliberate attacker, and nothing security-critical rests on them.
+- **The enroll budget is charged only on a WRONG code**, against a bucket keyed to a
+  constant. Both halves matter. Keyed per IP it could be rotated past; charged on every
+  *attempt* it becomes a lockout — a stranger spends ten requests an hour and the owner,
+  arriving with the correct code, is turned away by a limiter that runs before the code is
+  read. That is the shared-mutable-state failure below, rebuilt one layer up. Charging only
+  failures means the owner never draws on a bucket a stranger can empty.
 - **One challenge row per ceremony**, keyed by the challenge value. Keyed by *kind* — the
   original design — the pending challenge was a single slot any unauthenticated caller
   could overwrite via `/login/start`, locking the real user out for as long as they kept

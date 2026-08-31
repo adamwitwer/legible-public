@@ -146,9 +146,12 @@ ever needs to mean "when the photo was taken" for another reason, add an explici
 
 ## Security
 
-**Auth hardening (2026-08-31).** Rate limits exist now and are keyed deliberately: per-IP
-for the general and ceremony floors, **globally for the enroll code**, because
-`X-Forwarded-For` is spoofable and the enroll cap is the one that guards the archive.
+**Auth hardening (2026-08-31).** Rate limits exist now. The per-IP floors are best-effort
+only — `X-Forwarded-For` is caller-written, so they stop accidents, not adversaries. The
+enroll code is guarded by a budget keyed to a constant and **charged only on a wrong code**
+(`lib/enroll.ts`, `decideEnroll`). Do not move that charge earlier or key it per IP: an
+onRequest limiter on a shared key lets a stranger lock the owner out of the one documented
+way back into the archive. `enroll.test.ts` asserts exactly that.
 WebAuthn challenges are stored one row per ceremony keyed by the challenge value — keyed
 by kind, a stranger could overwrite the pending challenge and lock Adam out with no
 credential at all. `ENROLL_CODE` now refuses to fall back to its dev value in production.

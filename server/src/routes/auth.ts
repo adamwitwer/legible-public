@@ -8,22 +8,20 @@ import {
 } from '@simplewebauthn/server';
 import { sql } from '../db/index.js';
 import { env, isProd } from '../lib/env.js';
-import { challengeFromResponse, safeEqual } from '../lib/webauthn.js';
+import { decideEnroll } from '../lib/enroll.js';
+import { challengeFromResponse } from '../lib/webauthn.js';
 
 /**
  * Ceremony endpoints are cheap to call and expensive to have brute-forced, so
- * they carry their own limits on top of the global one.
+ * they carry their own per-IP limit rather than the looser global floor.
  *
- * `enrollLimit` is keyed to a CONSTANT rather than to the caller's IP, and
- * that is the point: X-Forwarded-For is attacker-controlled, so a per-IP cap on
- * the enroll code can be sidestepped by rotating the header. A global cap
- * cannot. Legitimate enrolment happens perhaps twice a year, so a ceiling this
- * low costs nothing and is the one limit that actually has to hold.
+ * Per-IP is best-effort and nothing security-critical rests on it: under
+ * `trustProxy` the key comes from X-Forwarded-For, which the caller controls
+ * (see the note in index.ts). It blunts runaway clients and casual floods. The
+ * enroll code — the one thing here worth brute-forcing — is guarded by
+ * `enrollFailures` below instead, which does not depend on the caller's IP.
  */
 const ceremonyLimit = { rateLimit: { max: 20, timeWindow: '1 minute' } };
-const enrollLimit = {
-  rateLimit: { max: 10, timeWindow: '1 hour', keyGenerator: () => 'enroll-global' },
-};
 
 const COOKIE = 'legible_session';
 const hash = (t: string) => createHash('sha256').update(t).digest('hex');
@@ -48,11 +46,26 @@ async function putChallenge(challenge: string, kind: 'register' | 'authenticate'
     values (${challenge}, ${challenge}, ${kind}, now() + interval '5 minutes')
     on conflict (id) do nothing
   `;
-  // Abandoned ceremonies are the normal case, not an anomaly: sweep them here
-  // rather than carrying a scheduled job for one table.
-  await sql`delete from challenges where expires_at <= now()`;
+  // Abandoned ceremonies are the normal case, not an anomaly, so they are swept
+  // here rather than by a scheduled job for one table. Sampled rather than run
+  // every time: /login/start needs no credential, and a table-wide DELETE on
+  // every unauthenticated call turns one cheap request into lock contention and
+  // WAL churn on a 256MB instance. Stale rows are inert either way — every
+  // lookup already filters on expires_at.
+  if (Math.random() < 0.02) await sql`delete from challenges where expires_at <= now()`;
 }
 
+/**
+ * Redeem a challenge, once.
+ *
+ * Load-bearing beyond what it looks like: `expectedChallenge` is now derived
+ * from the client's own clientDataJSON, so simplewebauthn's own
+ * challenge-equality check compares a value against itself and can no longer
+ * catch anything. ALL challenge binding rests on this lookup being an exact,
+ * single-use, kind-scoped match. Keep it that way — a LIKE, a fallback that
+ * returns the challenge anyway, or dropping the `kind` predicate would silently
+ * remove the binding entirely, and no test would fail.
+ */
 async function takeChallenge(challenge: string | null, kind: 'register' | 'authenticate') {
   if (!challenge) return null;
   const [row] = await sql<{ challenge: string }[]>`
@@ -153,19 +166,53 @@ export default async function authRoutes(app: FastifyInstance) {
 
   // --- registration -------------------------------------------------------
 
+  /**
+   * A budget for WRONG enroll codes, shared by everyone and keyed to a constant.
+   *
+   * Keying this to the caller's IP would be useless — X-Forwarded-For is
+   * attacker-supplied, so the cap could be rotated past. But a shared bucket
+   * consumed on every ATTEMPT would be worse than useless: a stranger could
+   * spend it in ten requests an hour and the owner, arriving with the correct
+   * code, would be turned away by a limiter that runs before the code is even
+   * checked. That is the same shared-mutable-state lockout this file exists to
+   * remove, rebuilt one layer up.
+   *
+   * So the budget is spent only on FAILURE, and only inside the handler. A
+   * correct code never touches it. An authenticated second-device enrolment
+   * never touches it. Someone guessing gets ten tries an hour, globally, and
+   * cannot lock the owner out by exhausting a bucket the owner does not draw on.
+   */
+  const enrollFailures = app.createRateLimit({
+    max: 10,
+    timeWindow: '1 hour',
+    keyGenerator: () => 'enroll-failures',
+  });
+
   app.post<{ Body: { enrollCode?: string } }>(
     '/api/auth/register/start',
-    { config: enrollLimit },
+    { config: ceremonyLimit },
     async (req, reply) => {
     const bootstrapped = (await credentialCount()) > 0;
-
-    // The first passkey needs the one-time code. Adding a second device only
-    // requires already being signed in on the first.
-    if (bootstrapped) {
-      if (!(await currentSession(req))) return reply.code(401).send({ error: 'not_authenticated' });
-    } else if (!safeEqual(req.body?.enrollCode ?? '', env.enrollCode)) {
-      req.log.warn({ ip: req.ip }, 'bad enroll code');
-      return reply.code(403).send({ error: 'bad_enroll_code' });
+    const decision = await decideEnroll({
+      bootstrapped,
+      authenticated: bootstrapped ? await currentSession(req) : false,
+      supplied: req.body?.enrollCode,
+      expected: env.enrollCode,
+      spendFailure: async () => {
+        // req.ips is the whole X-Forwarded-For chain; req.ip alone is the
+        // attacker-chosen head of it, so the one security log in this system
+        // would otherwise record whatever they cared to put there.
+        req.log.warn({ chain: req.ips, socket: req.socket.remoteAddress }, 'bad enroll code');
+        // ttlInSeconds only exists on the refused branch of the union.
+        const budget = await enrollFailures(req);
+        return budget.isAllowed
+          ? { isAllowed: true, ttlInSeconds: 0 }
+          : { isAllowed: false, ttlInSeconds: budget.ttlInSeconds };
+      },
+    });
+    if (!decision.ok) {
+      if (decision.retryAfter) reply.header('retry-after', String(decision.retryAfter));
+      return reply.code(decision.code).send({ error: decision.error });
     }
 
     // Scoped to this RP ID for the same reason: excluding a credential from another
@@ -266,9 +313,13 @@ export default async function authRoutes(app: FastifyInstance) {
     );
     if (!expectedChallenge) return reply.code(400).send({ error: 'challenge_expired' });
 
+    const credentialId = req.body?.response?.id;
+    if (typeof credentialId !== 'string' || !credentialId) {
+      return reply.code(400).send({ error: 'unknown_credential' });
+    }
     const [cred] = await sql<{ id: string; public_key: Buffer; counter: string; transports: string[] }[]>`
       select id, public_key, counter, transports from credentials
-      where id = ${req.body.response.id} and rp_id = ${env.rpId}
+      where id = ${credentialId} and rp_id = ${env.rpId}
     `;
     if (!cred) return reply.code(400).send({ error: 'unknown_credential' });
 

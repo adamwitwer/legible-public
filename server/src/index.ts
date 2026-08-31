@@ -32,13 +32,20 @@ await app.register(cookie);
 await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024 } });
 
 /**
- * Security headers. The archive is private, the app is same-origin, and it
- * loads nothing from anywhere else — so the policy can be strict.
+ * Security headers.
  *
- * `style-src` keeps 'unsafe-inline' because React sets element styles directly;
- * everything else is 'self' or 'none'. frame-ancestors 'none' is the one that
- * matters most here: it stops the app being framed for clickjacking, and unlike
- * X-Frame-Options it is honoured by every current browser.
+ * `style-src` keeps 'unsafe-inline' because React sets element styles directly.
+ * It also has to name fonts.googleapis.com, and font-src fonts.gstatic.com,
+ * because web/index.html pulls IBM Plex from Google Fonts: 'unsafe-inline'
+ * covers inline styles but NOT an external stylesheet URL, so omitting the host
+ * blocks the stylesheet — and the app degrades silently to system fallbacks
+ * rather than erroring, which is the kind of breakage nobody notices for weeks.
+ * Self-hosting the two families would let both hosts go, and would stop a
+ * private archive announcing every page view to a third party.
+ *
+ * frame-ancestors 'none' is the one that matters most here: it stops the app
+ * being framed for clickjacking, and unlike X-Frame-Options every current
+ * browser honours it.
  */
 await app.register(helmet, {
   contentSecurityPolicy: {
@@ -49,9 +56,9 @@ await app.register(helmet, {
       frameAncestors: ["'none'"],
       objectSrc: ["'none'"],
       scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       imgSrc: ["'self'", 'data:', 'blob:'],
-      fontSrc: ["'self'", 'data:'],
+      fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
       connectSrc: ["'self'"],
       workerSrc: ["'self'", 'blob:'],
       manifestSrc: ["'self'"],
@@ -67,18 +74,27 @@ await app.register(helmet, {
 });
 
 /**
- * Rate limiting. There was none, and the enroll code is guessable in unlimited
- * attempts without it — see the ceremony limits in routes/auth.ts, which are
- * tighter than this global floor.
+ * Rate limiting, and an honest account of what it buys.
  *
- * The health check is exempt: Render polls it, and a throttled health check
- * reads as an unhealthy service and gets the instance recycled.
+ * This floor is keyed per IP, and under trustProxy that key comes from a header
+ * the caller writes. Anyone willing to rotate X-Forwarded-For walks past it. So
+ * treat it as protection against runaway clients and accidents, NOT against a
+ * deliberate attacker — measured: 305 requests from one spoofed IP get 429,
+ * the same 305 spread over rotated IPs do not.
+ *
+ * Nothing security-critical is allowed to depend on it. The one limit that has
+ * to hold — wrong enroll codes — is keyed to a constant and charged only on
+ * failure, in routes/auth.ts.
+ *
+ * The health check is exempt, query string included: Render polls
+ * `healthCheckPath` and a throttled health check reads as an unhealthy service
+ * and gets the instance recycled.
  */
 await app.register(rateLimit, {
   global: true,
   max: 300,
   timeWindow: '1 minute',
-  allowList: (req) => req.url === '/api/health',
+  allowList: (req) => req.url.split('?')[0] === '/api/health',
 });
 
 app.get('/api/health', async () => {
