@@ -8,6 +8,22 @@ import {
 } from '@simplewebauthn/server';
 import { sql } from '../db/index.js';
 import { env, isProd } from '../lib/env.js';
+import { challengeFromResponse, safeEqual } from '../lib/webauthn.js';
+
+/**
+ * Ceremony endpoints are cheap to call and expensive to have brute-forced, so
+ * they carry their own limits on top of the global one.
+ *
+ * `enrollLimit` is keyed to a CONSTANT rather than to the caller's IP, and
+ * that is the point: X-Forwarded-For is attacker-controlled, so a per-IP cap on
+ * the enroll code can be sidestepped by rotating the header. A global cap
+ * cannot. Legitimate enrolment happens perhaps twice a year, so a ceiling this
+ * low costs nothing and is the one limit that actually has to hold.
+ */
+const ceremonyLimit = { rateLimit: { max: 20, timeWindow: '1 minute' } };
+const enrollLimit = {
+  rateLimit: { max: 10, timeWindow: '1 hour', keyGenerator: () => 'enroll-global' },
+};
 
 const COOKIE = 'legible_session';
 const hash = (t: string) => createHash('sha256').update(t).digest('hex');
@@ -16,18 +32,32 @@ const hash = (t: string) => createHash('sha256').update(t).digest('hex');
 const USER_ID = new TextEncoder().encode('adam');
 const USER_NAME = 'adam';
 
-async function putChallenge(id: string, challenge: string, kind: 'register' | 'authenticate') {
+/**
+  * One row per ceremony, keyed by the challenge itself.
+  *
+  * These used to be keyed by kind — a single "authenticate" row shared by
+  * everyone — so any unauthenticated caller could POST /login/start and
+  * overwrite the challenge of whoever was mid-login. Their authenticator would
+  * sign a challenge the server had already replaced, `takeChallenge` would
+  * return the stranger's, and verification failed. Repeated in a loop that
+  * locked the real user out of their own archive with no credential at all.
+  */
+async function putChallenge(challenge: string, kind: 'register' | 'authenticate') {
   await sql`
     insert into challenges (id, challenge, kind, expires_at)
-    values (${id}, ${challenge}, ${kind}, now() + interval '5 minutes')
-    on conflict (id) do update set challenge = excluded.challenge, expires_at = excluded.expires_at
+    values (${challenge}, ${challenge}, ${kind}, now() + interval '5 minutes')
+    on conflict (id) do nothing
   `;
+  // Abandoned ceremonies are the normal case, not an anomaly: sweep them here
+  // rather than carrying a scheduled job for one table.
+  await sql`delete from challenges where expires_at <= now()`;
 }
 
-async function takeChallenge(id: string, kind: 'register' | 'authenticate') {
+async function takeChallenge(challenge: string | null, kind: 'register' | 'authenticate') {
+  if (!challenge) return null;
   const [row] = await sql<{ challenge: string }[]>`
     delete from challenges
-    where id = ${id} and kind = ${kind} and expires_at > now()
+    where id = ${challenge} and kind = ${kind} and expires_at > now()
     returning challenge
   `;
   return row?.challenge ?? null;
@@ -123,14 +153,18 @@ export default async function authRoutes(app: FastifyInstance) {
 
   // --- registration -------------------------------------------------------
 
-  app.post<{ Body: { enrollCode?: string } }>('/api/auth/register/start', async (req, reply) => {
+  app.post<{ Body: { enrollCode?: string } }>(
+    '/api/auth/register/start',
+    { config: enrollLimit },
+    async (req, reply) => {
     const bootstrapped = (await credentialCount()) > 0;
 
     // The first passkey needs the one-time code. Adding a second device only
     // requires already being signed in on the first.
     if (bootstrapped) {
       if (!(await currentSession(req))) return reply.code(401).send({ error: 'not_authenticated' });
-    } else if (req.body?.enrollCode !== env.enrollCode) {
+    } else if (!safeEqual(req.body?.enrollCode ?? '', env.enrollCode)) {
+      req.log.warn({ ip: req.ip }, 'bad enroll code');
       return reply.code(403).send({ error: 'bad_enroll_code' });
     }
 
@@ -151,14 +185,19 @@ export default async function authRoutes(app: FastifyInstance) {
       authenticatorSelection: { residentKey: 'preferred', userVerification: 'preferred' },
     });
 
-    await putChallenge('register', options.challenge, 'register');
+    await putChallenge(options.challenge, 'register');
     return options;
-  });
+  },
+  );
 
   app.post<{ Body: { response: any; label?: string } }>(
     '/api/auth/register/finish',
+    { config: ceremonyLimit },
     async (req, reply) => {
-      const expectedChallenge = await takeChallenge('register', 'register');
+      const expectedChallenge = await takeChallenge(
+        challengeFromResponse(req.body?.response),
+        'register',
+      );
       if (!expectedChallenge) return reply.code(400).send({ error: 'challenge_expired' });
 
       // Every failure mode in here throws rather than returning verified:false,
@@ -172,10 +211,10 @@ export default async function authRoutes(app: FastifyInstance) {
           expectedRPID: env.rpId,
         });
       } catch (err) {
+        // The reason stays in the log. Handing an unauthenticated caller the
+        // raw exception text describes our verification internals to them.
         req.log.warn({ err }, 'registration verification threw');
-        return reply
-          .code(400)
-          .send({ error: 'verification_failed', message: (err as Error).message });
+        return reply.code(400).send({ error: 'verification_failed' });
       }
 
       if (!verification.verified || !verification.registrationInfo) {
@@ -208,17 +247,23 @@ export default async function authRoutes(app: FastifyInstance) {
 
   // --- authentication -----------------------------------------------------
 
-  app.post('/api/auth/login/start', async () => {
+  app.post('/api/auth/login/start', { config: ceremonyLimit }, async () => {
     const options = await generateAuthenticationOptions({
       rpID: env.rpId,
       userVerification: 'preferred',
     });
-    await putChallenge('authenticate', options.challenge, 'authenticate');
+    await putChallenge(options.challenge, 'authenticate');
     return options;
   });
 
-  app.post<{ Body: { response: any } }>('/api/auth/login/finish', async (req, reply) => {
-    const expectedChallenge = await takeChallenge('authenticate', 'authenticate');
+  app.post<{ Body: { response: any } }>(
+    '/api/auth/login/finish',
+    { config: ceremonyLimit },
+    async (req, reply) => {
+    const expectedChallenge = await takeChallenge(
+      challengeFromResponse(req.body?.response),
+      'authenticate',
+    );
     if (!expectedChallenge) return reply.code(400).send({ error: 'challenge_expired' });
 
     const [cred] = await sql<{ id: string; public_key: Buffer; counter: string; transports: string[] }[]>`
@@ -243,9 +288,7 @@ export default async function authRoutes(app: FastifyInstance) {
       });
     } catch (err) {
       req.log.warn({ err, credentialId: cred.id }, 'authentication verification threw');
-      return reply
-        .code(401)
-        .send({ error: 'verification_failed', message: (err as Error).message });
+      return reply.code(401).send({ error: 'verification_failed' });
     }
 
     if (!verification.verified) return reply.code(401).send({ error: 'verification_failed' });
@@ -257,7 +300,8 @@ export default async function authRoutes(app: FastifyInstance) {
     `;
     await issueSession(reply);
     return { ok: true };
-  });
+  },
+  );
 
   app.post('/api/auth/logout', async (req, reply) => {
     const token = req.cookies[COOKIE];

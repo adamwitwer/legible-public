@@ -29,8 +29,28 @@ export const env = {
     .split(',')
     .map((s) => s.trim()),
 
-  /** One-time code that authorises enrolling the first passkey. */
-  enrollCode: process.env.ENROLL_CODE ?? 'dev-enroll',
+  /**
+   * One-time code that authorises enrolling the FIRST passkey.
+   *
+   * The dev fallback must never reach production. The hatch is normally shut —
+   * it only opens when no credential exists for the current RP ID — but a
+   * custom-domain move produces exactly that state on its own, and at that
+   * moment this code is the only thing between a stranger and the archive.
+   * Render sets it via `generateValue: true`; if that is ever cleared, fail to
+   * start rather than fall back to a value published in this repo.
+   */
+  enrollCode: (() => {
+    const v = process.env.ENROLL_CODE;
+    if (v) return v;
+    if ((process.env.NODE_ENV ?? 'development') === 'production') {
+      throw new Error(
+        'refusing to start in production without ENROLL_CODE: the development ' +
+          'fallback is public, and it authorises enrolling a passkey whenever no ' +
+          'credential exists for this RP ID',
+      );
+    }
+    return 'dev-enroll';
+  })(),
 
   sessionDays: Number(process.env.SESSION_DAYS ?? 90),
   /** Serve the built PWA from this server (production single-origin deploy). */

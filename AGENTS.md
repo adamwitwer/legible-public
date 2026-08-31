@@ -146,6 +146,14 @@ ever needs to mean "when the photo was taken" for another reason, add an explici
 
 ## Security
 
+**Auth hardening (2026-08-31).** Rate limits exist now and are keyed deliberately: per-IP
+for the general and ceremony floors, **globally for the enroll code**, because
+`X-Forwarded-For` is spoofable and the enroll cap is the one that guards the archive.
+WebAuthn challenges are stored one row per ceremony keyed by the challenge value — keyed
+by kind, a stranger could overwrite the pending challenge and lock Adam out with no
+credential at all. `ENROLL_CODE` now refuses to fall back to its dev value in production.
+Don't undo any of these to simplify a test; use `WORKER_CONCURRENCY=0` and a real code.
+
 **This repo is public. The archive it holds is not.**
 
 The four pages in `images/` are invented for this repo — real handwriting, fictional

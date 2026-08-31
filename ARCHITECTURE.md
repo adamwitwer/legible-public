@@ -399,7 +399,20 @@ invented for this repo precisely so the repo can be public and the archive not.
 
 - **Passkey auth** (WebAuthn) — Face ID on the phone, Touch ID on the Mac. Bootstrap
   enrollment with a one-time code from an env var; session is an HttpOnly, SameSite=Lax
-  cookie. Rate-limit the endpoint. It is one user; do not build an identity system.
+  cookie. It is one user; do not build an identity system.
+- **Rate limits, and what they are keyed to.** 300/min per IP globally, 20/min per IP on
+  the ceremony endpoints, and **10/hour globally — not per IP — on enroll**. The last one
+  is the only cap that has to hold: `X-Forwarded-For` is attacker-controlled, so a per-IP
+  limit on the enroll code can be sidestepped by rotating the header, while a global one
+  cannot. Legitimate enrolment happens about twice a year.
+- **One challenge row per ceremony**, keyed by the challenge value. Keyed by *kind* — the
+  original design — the pending challenge was a single slot any unauthenticated caller
+  could overwrite via `/login/start`, locking the real user out for as long as they kept
+  writing to it.
+- **Security headers** via `@fastify/helmet`: a same-origin CSP with
+  `frame-ancestors 'none'`, HSTS in production, `Referrer-Policy: no-referrer`, nosniff.
+- **Failures do not explain themselves to strangers.** Verification errors log the reason
+  and return a bare `verification_failed`.
 - **R2 objects stay private**, served through short-lived signed URLs. Never a public bucket.
 - **Nightly export** to R2 *and* your own storage: one markdown file per note plus its
   images, in a plain directory tree. Render's backups protect the service; the markdown

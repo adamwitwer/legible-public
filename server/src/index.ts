@@ -2,7 +2,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
+import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
+import rateLimit from '@fastify/rate-limit';
 import { env, isProd } from './lib/env.js';
 import authRoutes from './routes/auth.js';
 import captureRoutes from './routes/capture.js';
@@ -14,10 +16,70 @@ import { startWorker } from './lib/worker.js';
 const app = Fastify({
   logger: isProd ? true : { transport: { target: 'pino-pretty' } },
   bodyLimit: 8 * 1024 * 1024,
+  /**
+   * Render terminates TLS ahead of us and puts the caller in X-Forwarded-For,
+   * so without this every request looks like it came from the proxy — and a
+   * per-IP rate limit keyed to one shared address locks the real user out the
+   * moment anyone else is noisy. Trusting the header is the lesser evil, but it
+   * IS attacker-controlled, so a per-IP cap can be sidestepped by rotating it.
+   * That is why the enroll-code limit in routes/auth.ts is keyed globally
+   * instead: it is the one cap that has to hold, and it cannot be rotated past.
+   */
+  trustProxy: true,
 });
 
 await app.register(cookie);
 await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024 } });
+
+/**
+ * Security headers. The archive is private, the app is same-origin, and it
+ * loads nothing from anywhere else — so the policy can be strict.
+ *
+ * `style-src` keeps 'unsafe-inline' because React sets element styles directly;
+ * everything else is 'self' or 'none'. frame-ancestors 'none' is the one that
+ * matters most here: it stops the app being framed for clickjacking, and unlike
+ * X-Frame-Options it is honoured by every current browser.
+ */
+await app.register(helmet, {
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"],
+      objectSrc: ["'none'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      fontSrc: ["'self'", 'data:'],
+      connectSrc: ["'self'"],
+      workerSrc: ["'self'", 'blob:'],
+      manifestSrc: ["'self'"],
+      upgradeInsecureRequests: isProd ? [] : null,
+    },
+  },
+  // One year, and only where TLS actually terminates in front of us.
+  strictTransportSecurity: isProd
+    ? { maxAge: 31536000, includeSubDomains: true, preload: false }
+    : false,
+  referrerPolicy: { policy: 'no-referrer' },
+  crossOriginEmbedderPolicy: false, // would block the page images we serve ourselves
+});
+
+/**
+ * Rate limiting. There was none, and the enroll code is guessable in unlimited
+ * attempts without it — see the ceremony limits in routes/auth.ts, which are
+ * tighter than this global floor.
+ *
+ * The health check is exempt: Render polls it, and a throttled health check
+ * reads as an unhealthy service and gets the instance recycled.
+ */
+await app.register(rateLimit, {
+  global: true,
+  max: 300,
+  timeWindow: '1 minute',
+  allowList: (req) => req.url === '/api/health',
+});
 
 app.get('/api/health', async () => {
   await sql`select 1`;
