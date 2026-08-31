@@ -8,6 +8,20 @@ import {
 } from '@simplewebauthn/server';
 import { sql } from '../db/index.js';
 import { env, isProd } from '../lib/env.js';
+import { decideEnroll, overBudget } from '../lib/enroll.js';
+import { challengeFromResponse } from '../lib/webauthn.js';
+
+/**
+ * Ceremony endpoints are cheap to call and expensive to have brute-forced, so
+ * they carry their own per-IP limit rather than the looser global floor.
+ *
+ * Per-IP is best-effort and nothing security-critical rests on it: under
+ * `trustProxy` the key comes from X-Forwarded-For, which the caller controls
+ * (see the note in index.ts). It blunts runaway clients and casual floods. The
+ * enroll code — the one thing here worth brute-forcing — is guarded by
+ * `enrollFailures` below instead, which does not depend on the caller's IP.
+ */
+const ceremonyLimit = { rateLimit: { max: 20, timeWindow: '1 minute' } };
 
 const COOKIE = 'legible_session';
 const hash = (t: string) => createHash('sha256').update(t).digest('hex');
@@ -16,18 +30,47 @@ const hash = (t: string) => createHash('sha256').update(t).digest('hex');
 const USER_ID = new TextEncoder().encode('adam');
 const USER_NAME = 'adam';
 
-async function putChallenge(id: string, challenge: string, kind: 'register' | 'authenticate') {
+/**
+  * One row per ceremony, keyed by the challenge itself.
+  *
+  * These used to be keyed by kind — a single "authenticate" row shared by
+  * everyone — so any unauthenticated caller could POST /login/start and
+  * overwrite the challenge of whoever was mid-login. Their authenticator would
+  * sign a challenge the server had already replaced, `takeChallenge` would
+  * return the stranger's, and verification failed. Repeated in a loop that
+  * locked the real user out of their own archive with no credential at all.
+  */
+async function putChallenge(challenge: string, kind: 'register' | 'authenticate') {
   await sql`
     insert into challenges (id, challenge, kind, expires_at)
-    values (${id}, ${challenge}, ${kind}, now() + interval '5 minutes')
-    on conflict (id) do update set challenge = excluded.challenge, expires_at = excluded.expires_at
+    values (${challenge}, ${challenge}, ${kind}, now() + interval '5 minutes')
+    on conflict (id) do nothing
   `;
+  // Abandoned ceremonies are the normal case, not an anomaly, so they are swept
+  // here rather than by a scheduled job for one table. Sampled rather than run
+  // every time: /login/start needs no credential, and a table-wide DELETE on
+  // every unauthenticated call turns one cheap request into lock contention and
+  // WAL churn on a 256MB instance. Stale rows are inert either way — every
+  // lookup already filters on expires_at.
+  if (Math.random() < 0.02) await sql`delete from challenges where expires_at <= now()`;
 }
 
-async function takeChallenge(id: string, kind: 'register' | 'authenticate') {
+/**
+ * Redeem a challenge, once.
+ *
+ * Load-bearing beyond what it looks like: `expectedChallenge` is now derived
+ * from the client's own clientDataJSON, so simplewebauthn's own
+ * challenge-equality check compares a value against itself and can no longer
+ * catch anything. ALL challenge binding rests on this lookup being an exact,
+ * single-use, kind-scoped match. Keep it that way — a LIKE, a fallback that
+ * returns the challenge anyway, or dropping the `kind` predicate would silently
+ * remove the binding entirely, and no test would fail.
+ */
+async function takeChallenge(challenge: string | null, kind: 'register' | 'authenticate') {
+  if (!challenge) return null;
   const [row] = await sql<{ challenge: string }[]>`
     delete from challenges
-    where id = ${id} and kind = ${kind} and expires_at > now()
+    where id = ${challenge} and kind = ${kind} and expires_at > now()
     returning challenge
   `;
   return row?.challenge ?? null;
@@ -123,15 +166,50 @@ export default async function authRoutes(app: FastifyInstance) {
 
   // --- registration -------------------------------------------------------
 
-  app.post<{ Body: { enrollCode?: string } }>('/api/auth/register/start', async (req, reply) => {
-    const bootstrapped = (await credentialCount()) > 0;
+  /**
+   * A budget for WRONG enroll codes, shared by everyone and keyed to a constant.
+   *
+   * Keying this to the caller's IP would be useless — X-Forwarded-For is
+   * attacker-supplied, so the cap could be rotated past. But a shared bucket
+   * consumed on every ATTEMPT would be worse than useless: a stranger could
+   * spend it in ten requests an hour and the owner, arriving with the correct
+   * code, would be turned away by a limiter that runs before the code is even
+   * checked. That is the same shared-mutable-state lockout this file exists to
+   * remove, rebuilt one layer up.
+   *
+   * So the budget is spent only on FAILURE, and only inside the handler. A
+   * correct code never touches it. An authenticated second-device enrolment
+   * never touches it. Someone guessing gets ten tries an hour, globally, and
+   * cannot lock the owner out by exhausting a bucket the owner does not draw on.
+   */
+  const enrollFailures = app.createRateLimit({
+    max: 10,
+    timeWindow: '1 hour',
+    keyGenerator: () => 'enroll-failures',
+  });
 
-    // The first passkey needs the one-time code. Adding a second device only
-    // requires already being signed in on the first.
-    if (bootstrapped) {
-      if (!(await currentSession(req))) return reply.code(401).send({ error: 'not_authenticated' });
-    } else if (req.body?.enrollCode !== env.enrollCode) {
-      return reply.code(403).send({ error: 'bad_enroll_code' });
+  app.post<{ Body: { enrollCode?: string } }>(
+    '/api/auth/register/start',
+    { config: ceremonyLimit },
+    async (req, reply) => {
+    const bootstrapped = (await credentialCount()) > 0;
+    const decision = await decideEnroll({
+      bootstrapped,
+      authenticated: bootstrapped ? await currentSession(req) : false,
+      supplied: req.body?.enrollCode,
+      expected: env.enrollCode,
+      spendFailure: async () => {
+        // req.ips is the whole X-Forwarded-For chain; req.ip alone is the
+        // attacker-chosen head of it, so the one security log in this system
+        // would otherwise record whatever they cared to put there.
+        req.log.warn({ chain: req.ips, socket: req.socket.remoteAddress }, 'bad enroll code');
+        // overBudget, not `!isAllowed` — see the note on BudgetResult.
+        return overBudget(await enrollFailures(req));
+      },
+    });
+    if (!decision.ok) {
+      if (decision.retryAfter) reply.header('retry-after', String(decision.retryAfter));
+      return reply.code(decision.code).send({ error: decision.error });
     }
 
     // Scoped to this RP ID for the same reason: excluding a credential from another
@@ -151,14 +229,19 @@ export default async function authRoutes(app: FastifyInstance) {
       authenticatorSelection: { residentKey: 'preferred', userVerification: 'preferred' },
     });
 
-    await putChallenge('register', options.challenge, 'register');
+    await putChallenge(options.challenge, 'register');
     return options;
-  });
+  },
+  );
 
   app.post<{ Body: { response: any; label?: string } }>(
     '/api/auth/register/finish',
+    { config: ceremonyLimit },
     async (req, reply) => {
-      const expectedChallenge = await takeChallenge('register', 'register');
+      const expectedChallenge = await takeChallenge(
+        challengeFromResponse(req.body?.response),
+        'register',
+      );
       if (!expectedChallenge) return reply.code(400).send({ error: 'challenge_expired' });
 
       // Every failure mode in here throws rather than returning verified:false,
@@ -172,10 +255,10 @@ export default async function authRoutes(app: FastifyInstance) {
           expectedRPID: env.rpId,
         });
       } catch (err) {
+        // The reason stays in the log. Handing an unauthenticated caller the
+        // raw exception text describes our verification internals to them.
         req.log.warn({ err }, 'registration verification threw');
-        return reply
-          .code(400)
-          .send({ error: 'verification_failed', message: (err as Error).message });
+        return reply.code(400).send({ error: 'verification_failed' });
       }
 
       if (!verification.verified || !verification.registrationInfo) {
@@ -208,22 +291,32 @@ export default async function authRoutes(app: FastifyInstance) {
 
   // --- authentication -----------------------------------------------------
 
-  app.post('/api/auth/login/start', async () => {
+  app.post('/api/auth/login/start', { config: ceremonyLimit }, async () => {
     const options = await generateAuthenticationOptions({
       rpID: env.rpId,
       userVerification: 'preferred',
     });
-    await putChallenge('authenticate', options.challenge, 'authenticate');
+    await putChallenge(options.challenge, 'authenticate');
     return options;
   });
 
-  app.post<{ Body: { response: any } }>('/api/auth/login/finish', async (req, reply) => {
-    const expectedChallenge = await takeChallenge('authenticate', 'authenticate');
+  app.post<{ Body: { response: any } }>(
+    '/api/auth/login/finish',
+    { config: ceremonyLimit },
+    async (req, reply) => {
+    const expectedChallenge = await takeChallenge(
+      challengeFromResponse(req.body?.response),
+      'authenticate',
+    );
     if (!expectedChallenge) return reply.code(400).send({ error: 'challenge_expired' });
 
+    const credentialId = req.body?.response?.id;
+    if (typeof credentialId !== 'string' || !credentialId) {
+      return reply.code(400).send({ error: 'unknown_credential' });
+    }
     const [cred] = await sql<{ id: string; public_key: Buffer; counter: string; transports: string[] }[]>`
       select id, public_key, counter, transports from credentials
-      where id = ${req.body.response.id} and rp_id = ${env.rpId}
+      where id = ${credentialId} and rp_id = ${env.rpId}
     `;
     if (!cred) return reply.code(400).send({ error: 'unknown_credential' });
 
@@ -243,9 +336,7 @@ export default async function authRoutes(app: FastifyInstance) {
       });
     } catch (err) {
       req.log.warn({ err, credentialId: cred.id }, 'authentication verification threw');
-      return reply
-        .code(401)
-        .send({ error: 'verification_failed', message: (err as Error).message });
+      return reply.code(401).send({ error: 'verification_failed' });
     }
 
     if (!verification.verified) return reply.code(401).send({ error: 'verification_failed' });
@@ -257,7 +348,8 @@ export default async function authRoutes(app: FastifyInstance) {
     `;
     await issueSession(reply);
     return { ok: true };
-  });
+  },
+  );
 
   app.post('/api/auth/logout', async (req, reply) => {
     const token = req.cookies[COOKIE];

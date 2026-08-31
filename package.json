@@ -15,7 +15,7 @@
     "start": "npm run start --workspace=server",
     "migrate": "npm run migrate --workspace=server",
     "typecheck": "npm run typecheck --workspace=server && npm run typecheck --workspace=web",
-    "test": "tsx web/src/lib/search.test.ts && tsx web/src/lib/history.test.ts && tsx server/src/lib/segment.test.ts && tsx server/src/lib/split.test.ts",
+    "test": "tsx web/src/lib/search.test.ts && tsx web/src/lib/history.test.ts && tsx server/src/lib/segment.test.ts && tsx server/src/lib/split.test.ts && tsx server/src/lib/webauthn.test.ts && tsx server/src/lib/enroll.test.ts",
     "backup": "node --env-file=.env scripts/backup.mjs",
     "hooks": "ln -sf ../../scripts/check-no-real-notes.sh .git/hooks/pre-commit && echo 'pre-commit hook installed'"
   },

@@ -1,6 +1,9 @@
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/** Below this, a network guesser has a chance and nothing else is stopping them. */
+const MIN_ENROLL_CODE_LENGTH = 16;
+
 const required = (name: string, fallback?: string): string => {
   const v = process.env[name] ?? fallback;
   if (v === undefined) throw new Error(`Missing required env var: ${name}`);
@@ -29,8 +32,44 @@ export const env = {
     .split(',')
     .map((s) => s.trim()),
 
-  /** One-time code that authorises enrolling the first passkey. */
-  enrollCode: process.env.ENROLL_CODE ?? 'dev-enroll',
+  /**
+   * One-time code that authorises enrolling the FIRST passkey.
+   *
+   * The dev fallback must never reach production. The hatch is normally shut —
+   * it only opens when no credential exists for the current RP ID — but a
+   * custom-domain move produces exactly that state on its own, and at that
+   * moment this code is the only thing between a stranger and the archive.
+   * Render sets it via `generateValue: true`; if that is ever cleared, fail to
+   * start rather than fall back to a value published in this repo.
+   */
+  enrollCode: (() => {
+    const v = process.env.ENROLL_CODE;
+    const prod = (process.env.NODE_ENV ?? 'development') === 'production';
+    if (!prod) return v || 'dev-enroll';
+    if (!v) {
+      throw new Error(
+        'refusing to start in production without ENROLL_CODE: the development ' +
+          'fallback is public, and it authorises enrolling a passkey whenever no ' +
+          'credential exists for this RP ID',
+      );
+    }
+    // Rate limiting does NOT protect this secret. A budget consulted before the
+    // code is compared would cap guessing, but any bucket a stranger can drain
+    // is one the owner can be locked out of — and this is the way back into the
+    // archive after a domain move. So the code carries its own weight, the way
+    // an API token does: enough entropy that the guess rate stops mattering.
+    // `generateValue: true` in render.yaml satisfies this; a memorable value
+    // typed in by hand does not, and that is exactly the temptation to refuse.
+    if (v.length < MIN_ENROLL_CODE_LENGTH || v === 'dev-enroll') {
+      throw new Error(
+        `refusing to start in production with a weak ENROLL_CODE (${v.length} chars, ` +
+          `minimum ${MIN_ENROLL_CODE_LENGTH}): nothing rate-limits guesses against it, ` +
+          'so its entropy is the whole defence. Use render.yaml\'s generateValue, or a ' +
+          'value from `openssl rand -base64 24`.',
+      );
+    }
+    return v;
+  })(),
 
   sessionDays: Number(process.env.SESSION_DAYS ?? 90),
   /** Serve the built PWA from this server (production single-origin deploy). */
