@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!--
+    A fountain pen nib, drawn rather than borrowed from the emoji set.
+    Every pen emoji is dark artwork; knocked out onto a transparent ground it
+    disappears against a dark tab strip, which is the one thing this icon
+    exists to survive.
+
+    No media query here, deliberately. The amber plate carries its own
+    contrast, so the icon is byte-identical in light and dark — nothing to
+    re-render on a theme flip, and nothing to go wrong in a browser that
+    ignores prefers-color-scheme inside an SVG favicon.
+
+    Drawn on a 32-unit grid but only ever seen at ~16px in a tab, so the
+    detail is deliberately coarse: at that size the slit closes up and what
+    identifies the tab is the amber block plus the nib's silhouette and
+    breather hole. Both survive.
+  -->
+  <rect width="32" height="32" rx="7" fill="#ffb454"/>
+  <path fill="#14100b" fill-rule="evenodd" d="
+    M9.6 12.0
+    C 9.6 9.4 10.9 8.1 12.9 8.0
+    C 15.0 7.9 17.0 7.9 19.1 8.0
+    C 21.1 8.1 22.4 9.4 22.4 12.0
+    C 22.2 17.9 19.4 23.2 16 28.6
+    C 12.6 23.2 9.8 17.9 9.6 12.0 Z
+    M16 11.1 a 2.1 2.1 0 1 0 0 4.2 a 2.1 2.1 0 1 0 0 -4.2 Z
+    M15.2 17.0 L 16.8 17.0 L 16 27.4 Z
+  "/>
+</svg>

@@ -42,6 +42,12 @@ for f in "${files[@]}"; do
   #    of a dashboard, is a screenshot of something private.
   case "$f" in
     images/*) ;;
+    # The app icons. Named one by one rather than allowing web/public/*.png,
+    # because a wildcard there is exactly where a screenshot would land next.
+    # All four are generated from favicon.svg by scripts/make-icons.mjs, so if
+    # one looks wrong the fix is to re-run that, not to edit the PNG.
+    web/public/apple-touch-icon.png|web/public/icon-192.png) ;;
+    web/public/icon-512.png|web/public/icon-maskable-512.png) ;;
     *.jpg|*.jpeg|*.png|*.heic|*.pdf|*.webp|*.gif|*.tiff|*.JPG|*.JPEG|*.PNG|*.HEIC|*.PDF)
       say "$f — images and PDFs may show real notes; commit only if you have looked at it" ;;
   esac

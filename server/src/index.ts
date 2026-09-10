@@ -119,6 +119,12 @@ if (env.serveStatic) {
   await app.register(fastifyStatic, { root: dist });
   app.setNotFoundHandler((req, reply) => {
     if (req.url.startsWith('/api/')) return reply.code(404).send({ error: 'not_found' });
+    // The icon is favicon.svg, and index.html points at it. A browser old
+    // enough to ignore that link still asks for /favicon.ico unprompted, and
+    // the SPA fallback below would hand it a 200 with an HTML body — an icon
+    // that fails as a decode error rather than as a missing file. 404 is the
+    // honest answer, and it is what makes the browser fall back cleanly.
+    if (req.url === '/favicon.ico') return reply.code(404).send();
     return reply.sendFile('index.html');
   });
 }
