@@ -5,6 +5,7 @@ import { Editor } from './ui/Editor';
 import { startRegistration } from '@simplewebauthn/browser';
 import { pushHistory as recordHistory, stepHistory } from './lib/history';
 import { Devices, type Device } from './ui/Devices';
+import { Help } from './ui/Help';
 import { api } from './lib/api';
 import { displayDate } from './lib/dates';
 import { allLiveNotes, db } from './lib/db';
@@ -57,6 +58,7 @@ export default function App() {
   const [count, setCount] = useState(0);
   const [synced, setSynced] = useState<Date | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [help, setHelp] = useState(false);
   const [took, setTook] = useState(0);
   const promptRef = useRef<HTMLInputElement>(null);
   // Closing a note re-runs the search, which resets the cursor. Park the id
@@ -182,16 +184,26 @@ export default function App() {
 
   // ------------------------------------------------------------ commands
 
+  /**
+   * Starting a typed note, in one place. Three entry points reach it: `:new`,
+   * the `+ note` button, and Enter on a query that matched nothing. Whatever is
+   * in the prompt seeds the body, so a search that found nothing becomes the
+   * note you were about to write.
+   */
+  const startNote = useCallback(async (body: string) => {
+    const note = await createNote(body.trim() ? { body: body.trim() } : {});
+    await refresh();
+    setQuery('');
+    setHelp(false);
+    setOpen(note);
+  }, [refresh]);
+
   async function runCommand(raw: string): Promise<boolean> {
     const [cmd, ...rest] = raw.slice(1).split(/\s+/);
     switch (cmd) {
-      case 'new': {
-        const note = await createNote(rest.length ? { body: rest.join(' ') } : {});
-        await refresh();
-        setQuery('');
-        setOpen(note);
+      case 'new':
+        await startNote(rest.join(' '));
         return true;
-      }
       case 'sync':   void runSync(); setQuery(''); return true;
       case 'logout': await api.logout(); setPhase('auth'); return true;
       case 'scan':   startScan(null); return true;
@@ -237,7 +249,10 @@ export default function App() {
         return true;
       }
       case 'help':
-        setStatus(':new  :scan  :sync  :enroll  :devices  :forget  :logout  ·  ↑↓ notes  ·  ^p/^n history  ·  tag: is: after: before: "phrase"');
+        // A panel, not a status line — the old one-liner lived in the header
+        // corner on the same 2.5s timer as "synced", which is no place to put
+        // the answer to "how do I start a note?".
+        setHelp(true);
         setQuery('');
         return true;
       default:
@@ -265,6 +280,7 @@ export default function App() {
       setHistIndex(null);
       if (capturing) setCapturing(false);
       setDevices(null);
+      setHelp(false);
       setQuery('');
       return;
     }
@@ -275,13 +291,8 @@ export default function App() {
       if (query.startsWith(':')) { await runCommand(query.trim()); return; }
       const hit = hits[cursor];
       if (hit) setOpen(hit.note);
-      else if (query.trim()) {
-        // Nothing matched — offer the query as the start of a new note.
-        const note = await createNote({ body: query.trim() });
-        await refresh();
-        setQuery('');
-        setOpen(note);
-      }
+      // Nothing matched — offer the query as the start of a new note.
+      else if (query.trim()) await startNote(query);
     }
   }
 
@@ -356,7 +367,12 @@ export default function App() {
         <span className="bar-build" title={`build ${__BUILD_ID__}`}>
           {__BUILD_ID__.split('·')[0]}
         </span>
-        <span className="bar-sync">{status ?? `last sync ${fmtAgo(synced)}`}</span>
+        {/* A message takes a full line of its own rather than an ellipsis:
+            the last words of "enroll failed: …" are the actionable part. The
+            idle "last sync" keeps the old one-line corner treatment. */}
+        <span className={status ? 'bar-sync bar-sync-msg' : 'bar-sync'}>
+          {status ?? `last sync ${fmtAgo(synced)}`}
+        </span>
       </header>
 
       {devices ? (
@@ -373,6 +389,8 @@ export default function App() {
         />
       ) : open ? (
         <Editor note={open} onChange={onEdit} onClose={closeNote} onDelete={onDelete} onSplit={onSplit} />
+      ) : help ? (
+        <Help onClose={() => { setHelp(false); promptRef.current?.focus(); }} />
       ) : (
         <Results
           hits={hits}
@@ -400,7 +418,7 @@ export default function App() {
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
-            onChange={(e) => { setQuery(e.target.value); setHistIndex(null); }}
+            onChange={(e) => { setQuery(e.target.value); setHistIndex(null); setHelp(false); }}
             onKeyDown={onPromptKey}
           />
           {/* One tap from the note list to the camera. The button is the file
@@ -414,6 +432,18 @@ export default function App() {
               way to. :scan is still there for anyone who wants it from here. */}
           {!open && (
             <>
+              {/* The camera had a one-tap button and typing had only a command
+                  you had to already know. Same row, same weight: whatever is in
+                  the prompt seeds the note, so a search that found nothing is
+                  one tap from being written down. */}
+              <button
+                type="button"
+                className="prompt-new"
+                title="start a typed note (:new)"
+                onClick={() => { void startNote(query); }}
+              >
+                +<span className="prompt-new-word"> note</span>
+              </button>
               <input
                 id="scan-now"
                 type="file"
