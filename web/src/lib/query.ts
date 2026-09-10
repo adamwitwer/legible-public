@@ -4,6 +4,7 @@
  *   kubernetes retro
  *   tag:meeting after:2026-01 budget
  *   before:2025-06-15 is:scan
+ *   is:todo tag:meeting
  *   "exact phrase" tag:ideas
  */
 export type ParsedQuery = {
@@ -11,6 +12,8 @@ export type ParsedQuery = {
   phrases: string[];
   tags: string[];
   kind: 'typed' | 'scan' | null;
+  /** `is:todo` — the note still carries an undeleted TODO marker. */
+  todo: boolean;
   after: string | null;
   before: string | null;
 };
@@ -31,6 +34,7 @@ export function parseQuery(input: string): ParsedQuery {
     phrases: [],
     tags: [],
     kind: null,
+    todo: false,
     after: null,
     before: null,
   };
@@ -52,7 +56,11 @@ export function parseQuery(input: string): ParsedQuery {
       const value = token.slice(colon + 1);
       if (!value) continue;
       if (key === 'tag') { out.tags.push(value.toLowerCase()); continue; }
-      if (key === 'is' && (value === 'scan' || value === 'typed')) { out.kind = value; continue; }
+      if (key === 'is') {
+        const v = value.toLowerCase();
+        if (v === 'scan' || v === 'typed') { out.kind = v; continue; }
+        if (v === 'todo') { out.todo = true; continue; }
+      }
       if (key === 'after')  { out.after  = normalizeDate(value, 'start'); continue; }
       if (key === 'before') { out.before = normalizeDate(value, 'end');   continue; }
     }
@@ -64,5 +72,5 @@ export function parseQuery(input: string): ParsedQuery {
 }
 
 export function isEmptyQuery(q: ParsedQuery) {
-  return !q.text && !q.phrases.length && !q.tags.length && !q.kind && !q.after && !q.before;
+  return !q.text && !q.phrases.length && !q.tags.length && !q.kind && !q.todo && !q.after && !q.before;
 }

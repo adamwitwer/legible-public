@@ -109,6 +109,10 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .hit-date { grid-area: date; color: var(--ok); font-variant-numeric: tabular-nums; }
 .hit-title { grid-area: title; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hit-kind { grid-area: kind; color: var(--muted); font-size: 0.75rem; }
+/* Sits inside .hit-title rather than in its own grid area, so it survives the
+   ellipsis on a long title and stays put on a phone, where .hit-kind is hidden
+   altogether. Amber: an open task is the one thing in the row worth a glance. */
+.hit-todo { color: var(--amber); margin-right: 0.5ch; }
 .hit-snippet {
   grid-area: snippet;
   font-family: var(--sans);

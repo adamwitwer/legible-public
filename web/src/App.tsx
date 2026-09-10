@@ -513,7 +513,15 @@ function Results({
           onClick={() => onPick(h.note)}
         >
           <span className="hit-date">{displayDate(h.note)}</span>
-          <span className="hit-title">{h.note.title ?? <em className="dim">untitled</em>}</span>
+          <span className="hit-title">
+            {/* A marker, not a control. Clearing it means deleting the TODO from
+                the note itself, which is why there is nothing here to click —
+                and why it cannot fall out of step with the note's text. */}
+            {h.note.tags.includes('todo') && (
+              <span className="hit-todo" title="has an open TODO">[ ]</span>
+            )}
+            {h.note.title ?? <em className="dim">untitled</em>}
+          </span>
           <span className="hit-kind">{h.note.kind}</span>
           <span className="hit-snippet">{h.snippet}</span>
         </button>

@@ -31,6 +31,10 @@ check('phrase extracted', parseQuery('"exact phrase" tag:x').phrases, ['exact ph
 check('phrase removed from text', parseQuery('"exact phrase" hello').text, 'hello');
 check('colon inside phrase not a filter', parseQuery('"tag:notreal"').tags, []);
 check('bad date ignored', parseQuery('after:notadate').after, null);
+check('is:todo sets the flag', parseQuery('is:todo').todo, true);
+check('is:todo strips from text', parseQuery('is:todo budget').text, 'budget');
+check('is:scan still works alongside', parseQuery('is:scan').todo, false);
+check('an unknown is: value stays as text', parseQuery('is:banana').text, 'is:banana');
 
 console.log('\nsearch');
 const notes = [
@@ -81,7 +85,32 @@ check('hashtags become tags', deriveTags('a #test and #q3-plan here'), ['test', 
 check('duplicate tags collapse', deriveTags('#a #a #b'), ['a', 'b']);
 check('mid-word hash is not a tag', deriveTags('issue#5 and #real'), ['real']);
 
+// These cases are MIRRORED in server/src/lib/todo.test.ts. The client derives
+// tags on save and the server derives them at import; if they drift, a scan's
+// indicator flips the first time the note is edited. Change one, fix both.
+check('bare TODO becomes the todo tag', deriveTags('call Priya TODO'), ['todo']);
+check('#todo tag form agrees', deriveTags('#todo'), ['todo']);
+check('both forms collapse to one tag', deriveTags('TODO and #todo'), ['todo']);
+check('lowercase todo in prose is not a task', deriveTags('nothing todo with it'), []);
+check('TODO inside a word does not count', deriveTags('TODOS and MASTODON'), []);
+check('a struck TODO is a task abandoned', deriveTags('~~TODO~~ handled'), []);
+check('a struck tag is taken back', deriveTags('~~#old~~ #new'), ['new']);
+check('a struck TODO does not suppress a live one', deriveTags('~~TODO~~ then TODO'), ['todo']);
+check('todo joins other tags', deriveTags('#meeting TODO'), ['meeting', 'todo']);
+
+console.log('\nis:todo filter');
+buildIndex([
+  note({ id: 't1', title: 'open one', body: 'TODO chase the invoice', tags: ['todo'] }),
+  note({ id: 't2', title: 'closed one', body: 'chased the invoice', tags: [] }),
+  note({ id: 't3', title: 'tagged too', body: 'TODO', tags: ['todo', 'meeting'] }),
+]);
+check('is:todo selects only marked notes', search('is:todo').hits.length, 2);
+check('is:todo composes with a tag', search('is:todo tag:meeting').hits.map((h) => h.note.id), ['t3']);
+check('is:todo composes with text', search('is:todo invoice').hits.map((h) => h.note.id), ['t1']);
+check('tag:todo reaches the same notes', search('tag:todo').hits.length, 2);
+
 console.log('\nincremental index upkeep');
+buildIndex(notes);
 const edited = { ...notes[0]!, body: 'kubernetes rollout plan', title: 'Q3 planning' };
 upsertInIndex(edited);
 check('edit is searchable', search('kubernetes').hits.length, 1);

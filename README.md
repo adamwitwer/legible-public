@@ -142,6 +142,23 @@ taken away from the original — a page can belong to two notes, which is what
 `starts_at` is for — and when the boundary page cannot be identified from the
 transcripts, both notes reference all of them and the status line says so.
 
+## TODOs
+
+Write **`TODO`** anywhere in a note — typed, or on the page in your own hand — and
+the note gets a `[ ]` beside its title in the list. `is:todo` narrows to those;
+`tag:todo` reaches the same set, because both forms derive one tag.
+
+**Deleting the word is how you check it off.** There is no separate checked
+state to drift out of step with the note, and nothing to click: clear the marker,
+save, and the indicator goes. The previous body is kept in `note_revisions`, so a
+TODO cleared by mistake comes back from **history**.
+
+Uppercase and a whole word — "todo" inside a sentence is prose, not a task. A
+struck-through `~~TODO~~` is a task abandoned and does not count. On a scanned
+page a TODO in the *margin* is an annotation rather than body text, so the import
+appends a `#todo` line to the body to make it the same editable marker; the
+transcript as OCR'd it stays untouched in `body_ocr_raw`.
+
 ## Backups
 
 `npm run backup` writes the whole archive to `~/Dropbox/Documents/Legible`
@@ -207,6 +224,7 @@ Typing searches; it does not navigate.
 kubernetes retro              bare words, fuzzy
 tag:meeting after:2026-01     filters compose
 before:2025-06-15 is:scan
+is:todo tag:meeting          notes with an open TODO
 "exact phrase" tag:ideas
 
 :new    start a note      :scan    capture pages

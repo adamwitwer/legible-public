@@ -5,6 +5,7 @@ import { enqueue } from '../lib/queue.js';
 import { segment, type PageOcr } from '../lib/segment.js';
 import { pageKey, storage } from '../lib/storage.js';
 import { requireAuth } from './auth.js';
+import { appendTodoMarker, hasTodoMarker, TODO_TAG } from '../lib/todo.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -107,14 +108,33 @@ export default async function captureRoutes(app: FastifyInstance) {
         for (const n of incoming) {
           const noteId = randomUUID();
           const now = new Date().toISOString();
+
+          // A TODO written in the margin lands in `annotations`, which the note
+          // list never reads. Surface it as a marker line in the body, so that the
+          // one gesture — delete it, save — clears a scan's indicator exactly as it
+          // clears a typed note's. The transcript as OCR'd it stays in body_ocr_raw,
+          // which nothing updates after this insert.
+          //
+          // The annotation's own text decides, not just its kind: the prompt
+          // classifies a struck-through "~~TODO~~" as kind 'todo' too, and a task
+          // crossed out on the page is a task abandoned, not an open one.
+          const rawBody = n.body ?? '';
+          const marginTodo = (n.annotations ?? []).some(
+            (a: any) => a.kind === 'todo' && hasTodoMarker(a.text ?? ''),
+          );
+          const body = marginTodo && !hasTodoMarker(rawBody) ? appendTodoMarker(rawBody) : rawBody;
+          const tags = [
+            ...new Set([...(n.tags ?? []), ...(hasTodoMarker(body) ? [TODO_TAG] : [])]),
+          ];
+
           await tx`
             insert into notes (
               id, kind, title, body, body_ocr_raw, written_on, written_on_precision,
               tags, ocr_status, confidence, created_at, updated_at
             ) values (
-              ${noteId}, 'scan', ${n.title ?? null}, ${n.body ?? ''}, ${n.body ?? ''},
+              ${noteId}, 'scan', ${n.title ?? null}, ${body}, ${rawBody},
               ${n.writtenOn ?? null}, ${n.writtenOnPrecision ?? null},
-              ${n.tags ?? []}, 'done', ${n.confidence ?? null}, ${now}, ${now}
+              ${tags}, 'done', ${n.confidence ?? null}, ${now}, ${now}
             )
           `;
           for (const [i, p] of (n.pages ?? []).entries()) {

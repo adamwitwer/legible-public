@@ -79,7 +79,14 @@ MARGINALIA
   it into the transcript flow.
 - Classify it: "speaker" (a name, often underlined, attributing the adjacent lines),
   "question" (a name or phrase with a question mark — someone to follow up with),
-  "qualifier" (a phrase modifying the adjacent line, e.g. "lower than 80%"), or "note".
+  "qualifier" (a phrase modifying the adjacent line, e.g. "lower than 80%"),
+  "todo" (see below), or "note".
+- The WORD "TODO" (or "TO-DO"), in the margin or written beside a line, is kind "todo".
+  Transcribe its text as written. Only the written word counts: a hand-drawn box or
+  tick beside a line is a stray mark by the rule below, and is not reliable enough to
+  read as a task. A TODO that is struck through is a task abandoned — transcribe it in
+  ~~tildes~~ as usual and still classify it "todo"; the app decides what a struck one
+  means.
 - Record which side it sits on, its rotation in degrees (margin text is sometimes written
   at 90°, read it anyway), and anchor it to the body line it sits beside.
 - Only record margin text that contains actual words. Stray dashes, ticks and marks are
@@ -98,7 +105,7 @@ export type OcrBlock = {
 export type OcrAnnotation = {
   side: 'left' | 'right' | 'top' | 'bottom';
   rotation: number;
-  kind: 'speaker' | 'question' | 'qualifier' | 'note';
+  kind: 'speaker' | 'question' | 'qualifier' | 'note' | 'todo';
   anchor: string | null;
   text: string;
 };
@@ -143,7 +150,7 @@ const SCHEMA = {
         properties: {
           side: { type: 'string', enum: ['left', 'right', 'top', 'bottom'] },
           rotation: { type: 'integer' },
-          kind: { type: 'string', enum: ['speaker', 'question', 'qualifier', 'note'] },
+          kind: { type: 'string', enum: ['speaker', 'question', 'qualifier', 'note', 'todo'] },
           anchor: { anyOf: [{ type: 'string' }, { type: 'null' }] },
           text: { type: 'string' },
         },

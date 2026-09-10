@@ -143,6 +143,20 @@ ever needs to mean "when the photo was taken" for another reason, add an explici
   the transcript is derived and correctable.
 - Every save writes a `note_revisions` row.
 - Search must stay off the network. If a feature needs a round trip per keystroke, it's wrong.
+- **The TODO marker rules are written twice and must not drift.** `deriveTags` in
+  `web/src/lib/notes.ts` and `hasTodoMarker` in `server/src/lib/todo.ts` are mirrors: the client
+  derives tags on every save, the server derives them once at import. If they disagree, a scan's
+  indicator flips the first time the note is edited, which reads as the feature forgetting rather
+  than as a bug. There is no module shared across the two workspaces, so the mirror is held by
+  matching cases in `todo.test.ts` and `search.test.ts` — change one regex and the other suite
+  fails. Both strip `~~struck~~` text first: a crossed-out TODO is a task abandoned.
+- **Tags are a pure function of the body.** Any body edit re-runs `deriveTags` and discards
+  anything not in the text, so there is no way to set a tag from the UI that survives the next
+  edit. Adding a "mark as todo" button means changing that rule first, not adding a writer.
+- Derivation is **client-side on save**, so a note already holding "TODO" in its body stays
+  untagged until it is next edited. Backfilling the archive means recomputing tags server-side,
+  and `seq` bumps on UPDATE — a naive backfill would restamp every touched row and churn sync
+  across devices. Think that through before running one.
 
 ## Security
 

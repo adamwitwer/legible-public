@@ -3,12 +3,15 @@
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { db } from './lib/db';
+import { deriveTags } from './lib/notes';
 import type { Note } from './lib/types';
 import './styles.css';
 
 const mk = (id: string, title: string, day: string, body: string): Note => ({
   id, kind: 'scan', title, body, written_on: `2026-08-${day}`, written_on_precision: 'day',
-  tags: [], ocr_status: null, confidence: null,
+  // Derived rather than hardcoded, so the harness exercises the real rule —
+  // including which TODOs count and which are struck out.
+  tags: deriveTags(body), ocr_status: null, confidence: null,
   created_at: `2026-08-${day}T10:00:00Z`, updated_at: `2026-08-${day}T10:00:00Z`,
   deleted_at: null, seq: day, dirty: 0,
 });
@@ -20,6 +23,8 @@ await db.notes.bulkPut([
   mk('n3', 'Love makes your soul crawl out', '03', 'from its hiding place'),
   mk('n4', 'The vanishing spies', '04', 'just something I read'),
   mk('n5', 'Pangram', '05', 'the quick brown fox jumps over the lazy dog'),
+  mk('n7', 'Invoice chase', '06', 'TODO ring the supplier back about the March invoice'),
+  mk('n8', 'Already handled', '07', '~~TODO~~ chased it, they are sending a credit note'),
   // a merged note: the second entry lost its date and was absorbed
   mk('n6', 'Meeting Title', '08',
      'Aug 8  Meeting Title\n\n- lorem ipsum\n- dolor sit amet\n\n' +

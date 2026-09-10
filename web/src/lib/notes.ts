@@ -45,8 +45,30 @@ export function deriveTitle(body: string): string | null {
 }
 
 const TAG_RE = /(?:^|\s)#([a-z0-9][a-z0-9_-]*)/gi;
+
+/**
+ * Struck text is retracted, not absent: it stays in the body so the change of
+ * mind survives, but it must not drive tags. A crossed-out #tag is a tag taken
+ * back, and a crossed-out TODO is a task abandoned.
+ */
+const STRUCK_RE = /~~[\s\S]*?~~/g;
+
+/**
+ * Uppercase, and a whole word — see server/src/lib/todo.ts, which MIRRORS these
+ * rules for the import path and must not drift from them. "TODO" is a mark made
+ * on purpose; a case-insensitive match would turn any sentence containing "todo"
+ * into a task.
+ */
+const TODO_RE = /\bTODO\b/;
+
 export function deriveTags(body: string): string[] {
-  return [...new Set([...body.matchAll(TAG_RE)].map((m) => m[1]!.toLowerCase()))];
+  const live = body.replace(STRUCK_RE, ' ');
+  const tags = new Set([...live.matchAll(TAG_RE)].map((m) => m[1]!.toLowerCase()));
+  // Bare TODO and #todo are the same claim, and both land on one tag — so the
+  // row indicator, `tag:todo` and `is:todo` all read from a single place, and
+  // deleting the marker from the body is what clears it.
+  if (TODO_RE.test(live)) tags.add('todo');
+  return [...tags];
 }
 
 /** What an edit may change. Anything omitted is left alone. */

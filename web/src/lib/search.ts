@@ -43,9 +43,10 @@ export function upsertInIndex(note: Note) {
 
 function matchesFilters(n: Note, q: ParsedQuery): boolean {
   if (q.kind && n.kind !== q.kind) return false;
-  if (q.tags.length) {
+  if (q.tags.length || q.todo) {
     const tags = n.tags.map((t) => t.toLowerCase());
     if (!q.tags.every((t) => tags.includes(t))) return false;
+    if (q.todo && !tags.includes('todo')) return false;
   }
   // Date filters run against the date on the page, falling back to creation.
   const on = displayDate(n);
