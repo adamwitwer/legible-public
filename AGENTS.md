@@ -35,8 +35,12 @@ Source of truth for requirements: `miniPRD.txt`. Design: `ARCHITECTURE.md`.
   ones, because `date_text` is stored in `pages.ocr_json` and only re-OCR would change it.
 
 - **Since Phase 3, all deployed:** app icons and TODO markers (2026-09-09), a `:help` panel
-  and `+ note` button (2026-09-10), on-request note summaries (2026-09-14). The conventions
-  each one depends on are under Conventions below.
+  and `+ note` button (2026-09-10), on-request note summaries (2026-09-14), and — also
+  2026-09-14 — crossed-out words dropped from note bodies at import, a service worker so the
+  app opens with no signal, and self-hosted fonts. Offline opening is confirmed on Adam's
+  iPhone from the home screen. The 27 scanned notes imported before the crossed-out rule were
+  cleaned in production with `npm run strip-struck -- --apply`; don't expect a re-run to find
+  anything. The conventions each change depends on are under Conventions below.
 
 `npm test` runs ten suites, 231 assertions: query grammar and search, history, segmentation,
 split, WebAuthn, enroll, TODO markers, struck text, and summaries (server and client).

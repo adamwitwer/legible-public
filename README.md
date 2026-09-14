@@ -13,8 +13,9 @@ revision history, local-first search and sync; and capture — camera upload, a 
 job queue, `claude-opus-5` OCR, segmentation and boundary review, verified against the
 real model. **Phase 3, backfill,** has its first notebook in.
 
-Since then: [TODO markers](#todos), [on-request summaries](#summaries), a `:help`
-panel and a `+ note` button, and app icons.
+Since then: [TODO markers](#todos), [on-request summaries](#summaries),
+[crossed-out words dropped at import](#crossed-out-words), opening with no signal, a
+`:help` panel and a `+ note` button, and app icons.
 
 ## Running it locally
 

@@ -511,6 +511,20 @@ conventions: struck text is retracted, `[?]` is a gap rather than a name to gues
 scan's margin annotations go to the model too. A summary costs about what OCRing one page
 does.
 
+### Crossed-out words
+
+Dropped from a note's body at import, kept in the raw OCR (see finding 4 above). The rule
+lives in one function, `stripStruck`, used by segmentation, commit, and the one-off script
+that cleaned the 27 notes imported before it. Anything comparing a body with raw OCR has to
+strip the OCR side the same way, or it silently stops matching.
+
+### Opening offline
+
+A service worker caches the app shell: network first for the page, cache first for hashed
+assets, never the API. With the local replica and offline boot already in place, that was
+the missing piece — the app now opens from the home screen with no signal, confirmed on an
+iPhone. IBM Plex is self-hosted so the worker can cache it.
+
 ---
 
 ## Build order
@@ -529,7 +543,8 @@ does.
    go through the same review. The first notebook, 96 pages, came to about $4.
 
 4. **The rest.** ~~Offline write queue~~ (offline edits are kept dirty and pushed on
-   reconnect), `motd`, ~~markdown export to Dropbox~~ (the daily backup), and
+   reconnect), ~~opening with no signal~~ (the service worker), `motd`, ~~markdown export to
+   Dropbox~~ (the daily backup), and
    optionally a second search rail — embeddings in `pgvector`, where a `?` prefix asks a
    question instead of matching keywords. Deliberately last: keyword search over your own
    words is usually what you actually want, and it is instant.
