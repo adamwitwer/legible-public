@@ -248,6 +248,31 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .editor-body:focus { outline: none; border-color: var(--amber-dim); }
 .editor-body::placeholder { color: var(--muted); }
 
+/* The grid's flexible row: an optional summary above a body that takes the rest. */
+.editor-main { display: flex; flex-direction: column; gap: 0.7rem; min-height: 0; }
+.editor-main .editor-body { flex: 1 1 auto; height: auto; min-height: 6rem; }
+
+/* Set apart from the body on purpose — these are not your words — and capped,
+   so on a phone a long summary cannot push the text you are editing away. */
+.summary {
+  border-left: 2px solid var(--amber-dim);
+  padding: 0.45rem 0 0.5rem 0.8rem;
+  max-height: 32vh;
+  overflow-y: auto;
+  flex: 0 0 auto;
+}
+.summary-head { display: flex; align-items: baseline; gap: 0.8rem; font-size: 0.72rem; padding-bottom: 0.3rem; }
+.summary-label { letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber-dim); }
+.summary-meta { color: var(--muted); }
+.summary-stale { color: var(--risk); }
+.summary-remove { margin-left: auto; font-size: 0.72rem; }
+.summary-text { font-family: var(--sans); font-size: 0.9rem; line-height: 1.55; color: var(--text); }
+.summary-text p { margin: 0; max-width: 72ch; }
+.summary-text p + p { margin-top: 0.55rem; }
+.summary-is-stale { border-left-color: var(--risk); }
+.summary-is-stale .summary-text { color: var(--muted); }
+.linkish:disabled { color: var(--muted); cursor: progress; }
+
 .revisions { border-top: 1px solid var(--rule); padding-top: 0.6rem; max-height: 30vh; overflow-y: auto; }
 .revisions-head { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); padding-bottom: 0.4rem; }
 .revisions-empty { color: var(--muted); font-size: 0.82rem; }

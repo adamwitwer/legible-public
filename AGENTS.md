@@ -150,6 +150,16 @@ ever needs to mean "when the photo was taken" for another reason, add an explici
   than as a bug. There is no module shared across the two workspaces, so the mirror is held by
   matching cases in `todo.test.ts` and `search.test.ts` — change one regex and the other suite
   fails. Both strip `~~struck~~` text first: a crossed-out TODO is a task abandoned.
+- **Never set `updated_at` when writing a summary.** Sync is last-write-wins on `updated_at`: a
+  push that is not newer than the stored row is kept as a revision and not applied. A summary
+  write that bumped it would make anything typed while the model was working lose that
+  comparison and vanish into history. The `seq` trigger fires on any UPDATE, so the summary still
+  syncs down. The same holds for any future server-side write to a note that is not an edit.
+- **Summary columns are server-owned.** `summary`, `summary_body_hash`, `summary_model`,
+  `summarized_at` are absent from the push upsert and stripped in `web/src/lib/sync.ts`. Staleness
+  compares SHA-256 of the body, hashed on both sides — `bodyHash` in `server/src/lib/summarize.ts`
+  and `web/src/lib/summary.ts` — and a shared vector in both test files keeps them agreeing.
+  Summaries are deliberately not in MiniSearch fields or the `search` tsvector.
 - **Tags are a pure function of the body.** Any body edit re-runs `deriveTags` and discards
   anything not in the text, so there is no way to set a tag from the UI that survives the next
   edit. Adding a "mark as todo" button means changing that rule first, not adding a writer.

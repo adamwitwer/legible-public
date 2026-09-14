@@ -76,6 +76,15 @@ export function Help({ onClose }: { onClose: () => void }) {
             TODO comes back from <b>history</b> in the note.
           </p>
         </div>
+
+        <div className="help-section">
+          <h2 className="help-title">summaries</h2>
+          <p className="help-prose">
+            <b>summarize</b> in an open note asks Claude for a paragraph or two about it. Nothing
+            is summarized unless you ask. The summary is kept with the note, is never searched,
+            and turns <b>stale</b> once the note is edited — <b>resummarize</b> to refresh it.
+          </p>
+        </div>
       </div>
 
       <button className="btn help-close" onClick={onClose}>close</button>

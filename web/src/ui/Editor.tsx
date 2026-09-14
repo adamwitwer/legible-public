@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
+import { bodyHash } from '../lib/summary';
 import type { NotePatch } from '../lib/notes';
 import type { Note } from '../lib/types';
 
@@ -17,20 +18,38 @@ export function Editor({
   onClose,
   onDelete,
   onSplit,
+  summarizing,
+  onSummarize,
+  onClearSummary,
 }: {
   note: Note;
   onChange: (patch: NotePatch) => void;
   onClose: () => void;
   onDelete: () => void;
   onSplit: (at: number) => void;
+  summarizing: boolean;
+  onSummarize: () => void;
+  onClearSummary: () => void;
 }) {
   const [body, setBody] = useState(note.body);
   const [title, setTitle] = useState(note.title ?? '');
   const [date, setDate] = useState(note.written_on ?? '');
   const [saved, setSaved] = useState(true);
   const [revisions, setRevisions] = useState<{ id: string; body: string; saved_at: string }[] | null>(null);
+  const [liveHash, setLiveHash] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const timer = useRef<number>(0);
+
+  // Hash what is on screen, including typing not yet saved, so "stale" shows
+  // the moment the note stops matching its summary rather than after autosave.
+  useEffect(() => {
+    if (!note.summary) return;
+    let cancelled = false;
+    void bodyHash(body).then((h) => { if (!cancelled) setLiveHash(h); });
+    return () => { cancelled = true; };
+  }, [body, note.summary, note.summary_body_hash]);
+  // Unknown (not yet hashed, or no SubtleCrypto) is not stale.
+  const stale = !!note.summary && liveHash !== null && liveHash !== note.summary_body_hash;
 
   useEffect(() => {
     setBody(note.body);
@@ -38,6 +57,7 @@ export function Editor({
     setDate(note.written_on ?? '');
     setSaved(true);
     setRevisions(null);
+    setLiveHash(null);
     ref.current?.focus();
     // Put the caret at the end rather than the start.
     const el = ref.current;
@@ -128,6 +148,14 @@ export function Editor({
           {saved ? 'saved' : 'saving…'}
         </span>
         <div className="editor-actions">
+          <button
+            className="linkish"
+            disabled={summarizing}
+            title="a short AI summary, kept with this note — never searched"
+            onClick={() => { flush(); onSummarize(); }}
+          >
+            {summarizing ? 'summarizing…' : note.summary ? 'resummarize' : 'summarize'}
+          </button>
           <button className="linkish" onClick={loadRevisions}>
             {revisions ? 'hide history' : 'history'}
           </button>
@@ -152,6 +180,36 @@ export function Editor({
         </div>
       </div>
 
+      {/* The summary and the body share the grid's one flexible row, so the
+          layout is unchanged for the notes that have no summary — which is
+          most of them, since a summary only exists when asked for. */}
+      <div className="editor-main">
+      {(note.summary || summarizing) && (
+        <section className={`summary${stale ? ' summary-is-stale' : ''}`} aria-label="summary">
+          <div className="summary-head">
+            <span className="summary-label">summary</span>
+            {summarizing ? (
+              <span className="summary-meta">writing…</span>
+            ) : stale ? (
+              <span className="summary-meta summary-stale" title="the note has been edited since this was written">
+                stale — the note has changed
+              </span>
+            ) : (
+              <span className="summary-meta" title={note.summary_model ?? undefined}>
+                {note.summarized_at ? new Date(note.summarized_at).toLocaleDateString() : ''}
+              </span>
+            )}
+            {!summarizing && note.summary && (
+              <button className="linkish summary-remove" onClick={onClearSummary}>remove</button>
+            )}
+          </div>
+          {note.summary && (
+            <div className="summary-text">
+              {note.summary.split(/\n\s*\n/).map((para, i) => <p key={i}>{para}</p>)}
+            </div>
+          )}
+        </section>
+      )}
       <textarea
         ref={ref}
         className="editor-body"
@@ -165,6 +223,7 @@ export function Editor({
           if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); flush(); }
         }}
       />
+      </div>
 
       {revisions && (
         <div className="revisions">

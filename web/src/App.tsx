@@ -133,7 +133,7 @@ export default function App() {
     if (status) {
       // Something that went wrong needs longer than an acknowledgement: 2.5s is
       // enough to confirm a sync, not enough to read a failure and act on it.
-      const ms = /failed|not reachable|could not|offline/.test(status) ? 9000 : 2500;
+      const ms = /failed|not reachable|could not|offline|declined/.test(status) ? 9000 : 2500;
       const id = window.setTimeout(() => setStatus(null), ms);
       return () => window.clearTimeout(id);
     }
@@ -340,6 +340,59 @@ export default function App() {
     }
   }, [open, refresh]);
 
+  const [summarizing, setSummarizing] = useState<string | null>(null);
+
+  /** Re-read the open note from the replica, if it is still the one on screen. */
+  const reopen = useCallback(async (id: string) => {
+    const fresh = await db.notes.get(id);
+    setOpen((cur) => (cur && cur.id === id && fresh ? fresh : cur));
+  }, []);
+
+  /**
+   * Summaries are opt-in: nothing asks for one except this. Same contract as
+   * split — the server summarizes its own copy, so push first, and refuse
+   * rather than summarize a body it has not received.
+   */
+  const onSummarize = useCallback(async () => {
+    if (!open) return;
+    const id = open.id;
+    setSummarizing(id);
+    try {
+      try {
+        await sync();
+      } catch {
+        setStatus('summarizing needs the server, and it is not reachable — try again when back online');
+        return;
+      }
+      await api.summarize(id);
+      await sync(); // the summary arrives the way every other change does
+      await refresh();
+      setSynced(await lastSync());
+      await reopen(id);
+    } catch (e: any) {
+      setStatus(
+        e?.body?.error === 'refused'
+          ? 'the model declined to summarize this note'
+          : `summary failed: ${e?.detail ?? e?.message ?? 'unknown error'}`,
+      );
+    } finally {
+      setSummarizing(null);
+    }
+  }, [open, refresh, reopen]);
+
+  const onClearSummary = useCallback(async () => {
+    if (!open) return;
+    const id = open.id;
+    try {
+      await api.clearSummary(id);
+      await sync();
+      await refresh();
+      await reopen(id);
+    } catch (e: any) {
+      setStatus(`could not remove the summary: ${e?.detail ?? e?.message ?? 'unknown error'}`);
+    }
+  }, [open, refresh, reopen]);
+
   const onDelete = useCallback(async () => {
     if (!open) return;
     await deleteNote(open.id);
@@ -388,7 +441,16 @@ export default function App() {
           }}
         />
       ) : open ? (
-        <Editor note={open} onChange={onEdit} onClose={closeNote} onDelete={onDelete} onSplit={onSplit} />
+        <Editor
+          note={open}
+          onChange={onEdit}
+          onClose={closeNote}
+          onDelete={onDelete}
+          onSplit={onSplit}
+          summarizing={summarizing === open.id}
+          onSummarize={onSummarize}
+          onClearSummary={onClearSummary}
+        />
       ) : help ? (
         <Help onClose={() => { setHelp(false); promptRef.current?.focus(); }} />
       ) : (

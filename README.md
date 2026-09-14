@@ -159,6 +159,21 @@ page a TODO in the *margin* is an annotation rather than body text, so the impor
 appends a `#todo` line to the body to make it the same editable marker; the
 transcript as OCR'd it stays untouched in `body_ocr_raw`.
 
+## Summaries
+
+An open note has **summarize**: Claude writes a paragraph or two about it and the
+summary is kept with the note. Nothing is summarized unless you ask, one note at a
+time. Edit the note afterwards and the summary is marked **stale** until you
+**resummarize**; **remove** drops it.
+
+Summaries are never searched — a search should only find words you wrote. They live
+in their own columns, not the body, so tags, TODOs and history are untouched. For a
+scan the margin annotations go to the model too, so a meeting summary knows who said
+what, and the prompt treats `~~struck~~` text as retracted and `[?]` as a gap rather
+than a name to guess. It needs the server, so it is unavailable offline. `SUMMARY_MODEL`
+overrides the model (default `claude-opus-5`); a summary costs about what OCRing one
+page does.
+
 ## Backups
 
 `npm run backup` writes the whole archive to `~/Dropbox/Documents/Legible`

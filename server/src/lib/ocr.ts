@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { anthropic } from './anthropic.js';
 import { env } from './env.js';
 
 /**
@@ -161,8 +161,6 @@ const SCHEMA = {
   },
 } as const;
 
-let client: Anthropic | null = null;
-const anthropic = () => (client ??= new Anthropic({ apiKey: env.anthropicApiKey || undefined }));
 
 export async function readPage(
   image: Buffer,

@@ -3,6 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { sql } from '../db/index.js';
 import { requireAuth } from './auth.js';
 import { findBoundaryPage, splitBody, titleOf } from '../lib/split.js';
+import { bodyHash, summarizeNote, SummaryRefused } from '../lib/summarize.js';
+import { env } from '../lib/env.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -185,6 +187,89 @@ export default async function noteRoutes(app: FastifyInstance) {
       };
     },
   );
+
+  /**
+   * Summarize a note, on request only.
+   *
+   * Summarizes the server's copy of the body, so the client pushes first — the
+   * same contract as split. The hash stamped is of the body actually sent to the
+   * model, so an edit that lands mid-request still reads as stale afterwards.
+   *
+   * NEVER set updated_at here. Sync is last-write-wins on updated_at: a push
+   * whose updated_at is not newer than the stored one is kept as a revision and
+   * NOT applied. If this bumped updated_at, anything typed while the model was
+   * working would be pushed, lose that comparison, and land silently in history
+   * instead of the note. The seq trigger still fires on this UPDATE, which is
+   * all sync needs to carry the summary down.
+   *
+   * Its own tight limit: each call spends money, and a stuck client retrying in
+   * a loop under the global 300/min floor would spend a lot of it.
+   */
+  app.post<{ Params: { id: string } }>(
+    '/api/notes/:id/summary',
+    { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      if (!UUID.test(req.params.id)) return reply.code(400).send({ error: 'bad_id' });
+      if (!env.anthropicApiKey) return reply.code(503).send({ error: 'no_model_key' });
+
+      const [note] = await sql<
+        { id: string; kind: 'typed' | 'scan'; title: string | null; body: string; written_on: string | null }[]
+      >`
+        select id, kind, title, body, written_on::text as written_on
+        from notes where id = ${req.params.id} and deleted_at is null
+      `;
+      if (!note) return reply.code(404).send({ error: 'not_found' });
+      if (!note.body.trim()) {
+        return reply.code(400).send({ error: 'nothing_to_summarize', message: 'the note is empty' });
+      }
+
+      const annotations = await sql<
+        { side: string | null; kind: string | null; anchor: string | null; text: string }[]
+      >`
+        select a.side, a.kind, a.anchor, a.text
+        from annotations a
+        left join note_pages np on np.note_id = a.note_id and np.page_id = a.page_id
+        where a.note_id = ${note.id}
+        order by np.idx nulls last, a.anchor nulls last
+      `;
+
+      let result: { summary: string; model: string };
+      try {
+        result = await summarizeNote({
+          kind: note.kind, title: note.title, writtenOn: note.written_on, body: note.body, annotations,
+        });
+      } catch (e) {
+        if (e instanceof SummaryRefused) return reply.code(422).send({ error: 'refused', message: e.message });
+        req.log.error(e, 'summary failed');
+        return reply.code(502).send({ error: 'model_failed', message: (e as Error).message });
+      }
+
+      const [row] = await sql`
+        update notes
+        set summary = ${result.summary},
+            summary_body_hash = ${bodyHash(note.body)},
+            summary_model = ${result.model},
+            summarized_at = now()
+        where id = ${note.id} and deleted_at is null
+        returning summary, summary_body_hash, summary_model, summarized_at, seq::text as seq
+      `;
+      if (!row) return reply.code(404).send({ error: 'not_found' });
+      return row;
+    },
+  );
+
+  /** Drop a note's summary. Same rule as above: no updated_at. */
+  app.delete<{ Params: { id: string } }>('/api/notes/:id/summary', async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(400).send({ error: 'bad_id' });
+    const [row] = await sql`
+      update notes
+      set summary = null, summary_body_hash = null, summary_model = null, summarized_at = null
+      where id = ${req.params.id} and deleted_at is null
+      returning seq::text as seq
+    `;
+    if (!row) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true };
+  });
 
   app.get<{ Params: { id: string } }>('/api/notes/:id/revisions', async (req, reply) => {
     if (!UUID.test(req.params.id)) return reply.code(400).send({ error: 'bad_id' });

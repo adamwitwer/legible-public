@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { db } from './lib/db';
 import { deriveTags } from './lib/notes';
+import { bodyHash } from './lib/summary';
 import type { Note } from './lib/types';
 import './styles.css';
 
@@ -30,5 +31,28 @@ await db.notes.bulkPut([
      'Aug 8  Meeting Title\n\n- lorem ipsum\n- dolor sit amet\n\n' +
      'FB Insights!\n\n- that is just how some things do not materialize'),
 ]);
+
+// One summary that matches its note and one written for an earlier body, so
+// both states of the panel can be looked at without a server.
+const fresh = await db.notes.get('n1');
+if (fresh) {
+  await db.notes.put({
+    ...fresh,
+    summary: 'A short entry under a meeting heading, holding two placeholder lines of lorem ipsum and nothing else.\n\nNo decisions, names or follow-ups are recorded.',
+    summary_body_hash: await bodyHash(fresh.body),
+    summary_model: 'claude-opus-5',
+    summarized_at: '2026-09-14T10:00:00Z',
+  });
+}
+const old = await db.notes.get('n7');
+if (old) {
+  await db.notes.put({
+    ...old,
+    summary: 'A reminder to call the supplier about an invoice from February.',
+    summary_body_hash: await bodyHash('TODO ring the supplier back about the February invoice'),
+    summary_model: 'claude-opus-5',
+    summarized_at: '2026-09-01T10:00:00Z',
+  });
+}
 
 createRoot(document.getElementById('root')!).render(<App />);

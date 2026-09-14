@@ -42,6 +42,8 @@ export const api = {
   revisions: (id: string) => req(`/api/notes/${id}/revisions`),
   splitNote: (id: string, at: number) =>
     req(`/api/notes/${id}/split`, { method: 'POST', body: JSON.stringify({ at }) }),
+  summarize: (id: string) => req(`/api/notes/${id}/summary`, { method: 'POST' }),
+  clearSummary: (id: string) => req(`/api/notes/${id}/summary`, { method: 'DELETE' }),
 
   // --- capture ---
   createBatch: () => req('/api/capture/batches', { method: 'POST' }),

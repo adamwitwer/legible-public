@@ -13,7 +13,11 @@ export async function sync(): Promise<{ pushed: number; pulled: number }> {
   if (dirty.length) {
     for (let i = 0; i < dirty.length; i += 200) {
       const batch = dirty.slice(i, i + 200);
-      const { saved } = await api.push(batch.map(({ dirty: _d, seq: _s, ...n }) => n));
+      // The summary columns are server-owned: stripped here so the client never
+      // even appears to write them. The server ignores them regardless.
+      const { saved } = await api.push(
+        batch.map(({ dirty: _d, seq: _s, summary: _a, summary_body_hash: _b, summary_model: _m, summarized_at: _t, ...n }) => n),
+      );
       await db.transaction('rw', db.notes, async () => {
         for (const row of saved as { id: string; seq: string }[]) {
           const local = await db.notes.get(row.id);

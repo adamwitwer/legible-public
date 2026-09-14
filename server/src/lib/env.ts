@@ -94,6 +94,8 @@ export const env = {
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
   /** Handwriting is the hard case; accuracy compounds over a decades-long archive. */
   ocrModel: process.env.OCR_MODEL ?? 'claude-opus-5',
+  /** Same model as OCR: shorthand full of names is where summary quality shows, and it costs cents. */
+  summaryModel: process.env.SUMMARY_MODEL ?? 'claude-opus-5',
   /** 0 disables the in-process worker (useful in tests). */
   workerConcurrency: Number(process.env.WORKER_CONCURRENCY ?? 2),
 };

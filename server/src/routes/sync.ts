@@ -18,6 +18,7 @@ export default async function syncRoutes(app: FastifyInstance) {
     const rows = await sql`
       select id, kind, title, body, written_on, written_on_precision, tags,
              ocr_status, confidence,
+             summary, summary_body_hash, summary_model, summarized_at,
              created_at, updated_at, deleted_at, seq::text as seq
       from notes
       where seq > ${since}::bigint
