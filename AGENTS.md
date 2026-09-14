@@ -82,6 +82,7 @@ without re-reading a page. On the first notebook the rule takes 56 notes to 34.
 | Auth | Passkey / WebAuthn, HttpOnly SameSite=Lax session cookie. One user; do not build an identity system. |
 | Queue | Postgres `jobs` table + `FOR UPDATE SKIP LOCKED`, worked in-process. No Redis. |
 | Typography | Monospace for chrome/prompt/metadata, **proportional for note bodies**. Amber phosphor on warm near-black, not green on black. |
+| Marginalia | **Captured at import, not surfaced further** — not searched, synced, or shown in the editor (Adam, 2026-09-14). He adapts his note-taking rather than have the app model its idiosyncrasies; don't propose features that do. |
 | Summaries | **Opt-in per note, never searched** — Adam's call (2026-09-14). Server-owned columns, never the body. `claude-opus-5` at low effort, same model as OCR. |
 
 ## Findings from real pages that the code must honor

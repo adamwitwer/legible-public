@@ -69,8 +69,10 @@ it. A name with a question mark is someone to **follow up** with. A phrase such 
 Flattening any of them into the body reading order would corrupt the meaning — a speaker
 name would land mid-sentence, a qualifier would attach to the wrong claim. They are
 captured as structured annotations with a side, an anchor to the block they sit beside,
-and a type. **As built they appear only in capture review**, beside the proposed note — they
-are not yet indexed for search, synced to devices, or shown in the editor. Two features reach
+and a type. **They appear only in capture review**, beside the proposed note, and that is
+deliberate: they are not indexed for search, synced to devices, or shown in the editor.
+Adam's call (2026-09-14) — he adapts how he writes rather than have the app model the
+idiosyncrasies of his notebook. Two features reach
 them server-side: a margin `TODO` becomes a marker line in the body at import, and a summary
 sends a scan's annotations to the model so it knows who said what.
 
@@ -371,8 +373,8 @@ notes ~ 2,481 notes ────────────────────
   match starts a note with it. Never reach for the mouse.
 - On a phone the prompt sits at the bottom with `+` and `⌾ scan` beside it.
 - In a note: **split here**, **history**, and **summarize**.
-- *Not built:* `motd` (a note from this day a year ago), and opening a note's original
-  photographs from the editor — `GET /api/notes/:id/pages` exists, but nothing calls it yet.
+- *Not built:* `motd` (a note from this day a year ago). Opening a note's original photographs
+  from the editor was dropped as unneeded — the daily backup keeps every page image.
 
 Query grammar — bare words match fuzzily, prefixed tokens filter, and they compose:
 
