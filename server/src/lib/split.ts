@@ -3,6 +3,8 @@
  * divides, and which page the second half opens on.
  */
 
+import { stripStruck } from './struck.js';
+
 export type SplitText = { head: string; tail: string };
 
 /** Returns null when the point leaves one side empty — nothing to split. */
@@ -29,10 +31,11 @@ type PageLike = { ocr_json?: { blocks?: { transcript?: string }[] } | null };
  *
  * The stored body and the per-block transcripts are the same words with
  * different whitespace — the body is blocks joined together — so both sides are
- * flattened before comparing.
+ * flattened before comparing. The raw transcripts still carry ~~struck~~ text
+ * that bodies no longer do, so that is stripped too, or no tail would match.
  */
 export function findBoundaryPage(pages: readonly PageLike[], tail: string): number {
-  const flatten = (t: string) => t.replace(/\s+/g, ' ').trim().toLowerCase();
+  const flatten = (t: string) => stripStruck(t).replace(/\s+/g, ' ').trim().toLowerCase();
   const probe = flatten(tail.slice(0, 60));
   if (!probe) return -1;
   return pages.findIndex((p) =>

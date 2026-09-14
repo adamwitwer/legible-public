@@ -62,8 +62,8 @@ check('the mid-page note occupies only the page it starts on', notes[1]!.pages.l
 check('third note opens at the top of its own page', notes[2]!.title, 'Love makes your soul crawl out');
 check('an undated header is folded into the note above it',
   notes[0]!.body.includes('flip Yeahhhh'), true);
-check('a struck date in the body does not become a note date',
-  [notes[0]!.body.includes('~~Aug 2~~'), notes[0]!.writtenOn], [true, '2026-08-01']);
+check('a struck date is dropped from the body and still not taken as the header',
+  [notes[0]!.body.includes('~~'), notes[0]!.writtenOn], [false, '2026-08-01']);
 check('a page-top start records no anchor', notes[0]!.pages[0]!.startsAt, null);
 check('continuation pages are joined into the body',
   notes[0]!.body.includes('Lorem ipsum') && notes[0]!.body.includes('lonely guy'), true);

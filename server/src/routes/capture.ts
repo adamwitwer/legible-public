@@ -6,6 +6,7 @@ import { segment, type PageOcr } from '../lib/segment.js';
 import { pageKey, storage } from '../lib/storage.js';
 import { requireAuth } from './auth.js';
 import { appendTodoMarker, hasTodoMarker, TODO_TAG } from '../lib/todo.js';
+import { stripStruck } from '../lib/struck.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -119,10 +120,13 @@ export default async function captureRoutes(app: FastifyInstance) {
           // classifies a struck-through "~~TODO~~" as kind 'todo' too, and a task
           // crossed out on the page is a task abandoned, not an open one.
           const rawBody = n.body ?? '';
+          // Segmentation already dropped crossed-out words; this catches a batch
+          // proposed before that rule, or a strike typed into review. Idempotent.
+          const reviewed = stripStruck(rawBody);
           const marginTodo = (n.annotations ?? []).some(
             (a: any) => a.kind === 'todo' && hasTodoMarker(a.text ?? ''),
           );
-          const body = marginTodo && !hasTodoMarker(rawBody) ? appendTodoMarker(rawBody) : rawBody;
+          const body = marginTodo && !hasTodoMarker(reviewed) ? appendTodoMarker(reviewed) : reviewed;
           const tags = [
             ...new Set([...(n.tags ?? []), ...(hasTodoMarker(body) ? [TODO_TAG] : [])]),
           ];

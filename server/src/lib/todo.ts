@@ -16,11 +16,11 @@ export const TODO_TAG = 'todo';
 export const TODO_MARKER = '#todo';
 
 /**
- * Struck text is retracted, not absent — it stays in the body so the change of
- * mind survives, but it must not drive tags. A crossed-out TODO is a task
- * abandoned, which is the opposite of an open one.
+ * A crossed-out TODO is a task abandoned, not an open one. Scan bodies no longer
+ * carry struck text (see struck.ts), but a margin annotation's text and a typed
+ * note still can.
  */
-const STRUCK = /~~[\s\S]*?~~/g;
+import { STRUCK } from './struck.js';
 
 /**
  * Uppercase, and a whole word. This is deliberate: "TODO" is a mark someone

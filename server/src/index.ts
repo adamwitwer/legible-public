@@ -35,13 +35,14 @@ await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024 } });
  * Security headers.
  *
  * `style-src` keeps 'unsafe-inline' because React sets element styles directly.
- * It also has to name fonts.googleapis.com, and font-src fonts.gstatic.com,
- * because web/index.html pulls IBM Plex from Google Fonts: 'unsafe-inline'
- * covers inline styles but NOT an external stylesheet URL, so omitting the host
- * blocks the stylesheet — and the app degrades silently to system fallbacks
- * rather than erroring, which is the kind of breakage nobody notices for weeks.
- * Self-hosting the two families would let both hosts go, and would stop a
- * private archive announcing every page view to a third party.
+ * Fonts are self-hosted (@fontsource, imported by web/src/styles.css), so style
+ * and font sources are this origin only. They used to name fonts.googleapis.com
+ * and fonts.gstatic.com; those went because the service worker cannot cache a
+ * cross-origin font under connect-src 'self' — the app opened offline in system
+ * fonts — and because a private archive should not announce page views to a
+ * third party. If a stylesheet ever comes from another host again: 'unsafe-inline'
+ * does NOT cover an external URL, and omitting the host degrades the app to
+ * fallback fonts silently rather than with an error.
  *
  * frame-ancestors 'none' is the one that matters most here: it stops the app
  * being framed for clickjacking, and unlike X-Frame-Options every current
@@ -56,9 +57,9 @@ await app.register(helmet, {
       frameAncestors: ["'none'"],
       objectSrc: ["'none'"],
       scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'blob:'],
-      fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
+      fontSrc: ["'self'", 'data:'],
       connectSrc: ["'self'"],
       workerSrc: ["'self'", 'blob:'],
       manifestSrc: ["'self'"],

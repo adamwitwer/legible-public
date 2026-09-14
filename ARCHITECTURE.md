@@ -81,11 +81,12 @@ Rotated text needs calling out explicitly in the prompt or it gets skipped.
 ### 4. Struck text is retracted, not absent
 
 Page 2 carries a struck `Aug 2` — a date started and abandoned. It matters twice over.
-Struck spans are transcribed wrapped in `~~…~~`: findable if you go looking, never read as
-current, because silently dropping them loses the fact
-that you changed your mind, which is often the interesting part. (A lower search weight for
-struck text was planned and is not built — it matches like any other text — though tags and
-TODO markers do ignore it.) And a struck date must
+The model transcribes struck spans wrapped in `~~…~~`, and the raw OCR keeps them — that is
+what stops a struck date being read as a header date. **The note body does not** (revised
+2026-09-14): segmentation drops crossed-out words, so the digital note reads as the page
+means rather than as it looks. The change of mind survives in the photograph and in
+`pages.ocr_json`. Notes imported before the rule were brought in line by
+`npm run strip-struck`. And a struck date must
 never be taken as a header date — the note it sits inside is `Aug 1`, and the `Aug 2`
 note does not begin until partway down the next page.
 
@@ -119,8 +120,9 @@ phone on cellular costs 60–200 ms before the database does any work — a perc
 on every keystroke, and unavailable with no signal.
 
 One user means a bounded corpus, so the whole thing is synced down and searched in
-memory. **~2–5 ms per keystroke, and it works offline** — once the app is loaded. There is no
-service worker yet, so opening it cold with no signal still fails.
+memory. **~2–5 ms per keystroke, and it works offline** — including opening
+cold with no signal. A service worker caches the app shell: network first for the page, so
+a deploy still lands, and never the API.
 
 At ~1.5 KB of text per note, 5,000 notes is ~7 MB raw and under 3 MB gzipped — a one-time
 cost on a new device, then deltas. The in-RAM index sits around 15 MB.
@@ -306,7 +308,8 @@ Prompt rules earned directly from the sample pages:
   accepted a long dash in place of a date and over-segmented Adam's real notebooks.)
 - **Transcribe to markdown.** Cascading indentation becomes nested lists. Braces
   grouping several lines become a described grouping.
-- **Keep struck text**, wrapped in `~~…~~`.
+- **Keep struck text in the transcript**, wrapped in `~~…~~`. Segmentation drops it from the
+  note body; the raw OCR keeps it.
 - **Capture margin text separately**, with its side and rotation. Read rotated text.
 - **Classify it** — speaker, question, qualifier, todo, or note. A written `TODO` beside a
   line is kind `todo`; a hand-drawn box is not, being indistinguishable from a stray mark.
@@ -474,6 +477,8 @@ invented for this repo precisely so the repo can be public and the archive not.
   writing to it.
 - **Security headers** via `@fastify/helmet`: a same-origin CSP with
   `frame-ancestors 'none'`, HSTS in production, `Referrer-Policy: no-referrer`, nosniff.
+- **No third-party requests.** IBM Plex is self-hosted, so opening the archive tells nobody
+  else it was opened — and the service worker can cache the fonts for offline use.
 - **Failures do not explain themselves to strangers.** Verification errors log the reason
   and return a bare `verification_failed`.
 - **R2 objects stay private**, served through the authenticated API rather than signed URLs,

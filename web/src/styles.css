@@ -1,3 +1,14 @@
+/* IBM Plex, self-hosted. It used to come from Google Fonts, which the service
+   worker cannot cache under this app's CSP — so the app opened offline in system
+   fonts — and which told a third party about every page view of a private
+   archive. The weights are the ones the stylesheet actually uses. */
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+
 /* Legible — amber phosphor on warm near-black.
    Monospace for chrome; proportional for note bodies (per the PRD answer). */
 

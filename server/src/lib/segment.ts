@@ -1,4 +1,5 @@
 import type { OcrBlock, OcrResult } from './ocr.js';
+import { stripStruck } from './struck.js';
 
 export type PageOcr = { pageId: string; idx: number; shotAt: string | null; ocr: OcrResult };
 
@@ -109,7 +110,9 @@ export function segment(pages: PageOcr[]): ProposedNote[] {
         const { date, precision } = resolveDate(block.date_text, block.date_precision, fallback);
         notes.push({
           title: cleanTitle(block.title),
-          body: block.transcript.trim(),
+          // Crossed-out words are dropped here, where OCR text becomes a note —
+          // see struck.ts. pages.ocr_json keeps them.
+          body: stripStruck(block.transcript).trim(),
           writtenOn: date,
           writtenOnPrecision: precision,
           dateText: block.date_text,
@@ -117,12 +120,12 @@ export function segment(pages: PageOcr[]): ProposedNote[] {
           pages: [{
             pageId: page.pageId,
             idx: page.idx,
-            startsAt: blocks.indexOf(block) > 0 ? block.transcript.slice(0, 80) : null,
+            startsAt: blocks.indexOf(block) > 0 ? stripStruck(block.transcript).trim().slice(0, 80) : null,
           }],
           annotations: [],
         });
       } else {
-        current!.body = `${current!.body}\n\n${block.transcript.trim()}`.trim();
+        current!.body = `${current!.body}\n\n${stripStruck(block.transcript).trim()}`.trim();
         if (!current!.pages.some((p) => p.pageId === page.pageId)) {
           current!.pages.push({ pageId: page.pageId, idx: page.idx, startsAt: null });
         }
@@ -135,8 +138,11 @@ export function segment(pages: PageOcr[]): ProposedNote[] {
     // belongs to, even though a different note is what the page ends on.
     const onThisPage = notes.filter((n) => n.pages.some((p) => p.pageId === page.pageId));
     for (const a of page.ocr.annotations ?? []) {
-      const byAnchor = a.anchor
-        ? onThisPage.find((n) => n.body.toLowerCase().includes(a.anchor!.toLowerCase().slice(0, 40)))
+      // Stripped like the body, or a margin note beside a crossed-out word would
+      // stop matching the line it sits next to and drift to the wrong note.
+      const anchor = a.anchor ? stripStruck(a.anchor).trim().toLowerCase().slice(0, 40) : '';
+      const byAnchor = anchor
+        ? onThisPage.find((n) => n.body.toLowerCase().includes(anchor))
         : undefined;
       const owner = byAnchor ?? onThisPage[onThisPage.length - 1] ?? notes[notes.length - 1];
       owner?.annotations.push({ ...a, pageId: page.pageId });

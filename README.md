@@ -101,6 +101,13 @@ does not replace reading your own diff.
 - **`web/`** — React PWA. Dexie holds the local replica, MiniSearch indexes it in
   memory, and the terminal UI never touches the network to search.
 
+**It opens with no signal.** A service worker (`web/public/sw.js`) caches the app shell, so
+the app starts offline against the local replica. The page is fetched network-first, so a
+deploy still lands the next time you open it online; the API is never cached. Fonts are
+self-hosted for the same reason — the worker cannot cache a third-party font — and so no
+page view reaches anyone else. It registers in production builds only: to try it, run
+`npm run build`, then `npx vite preview` in `web/`, load it, stop the server, and reload.
+
 **App icons come from one file,** `web/public/favicon.svg`. `node scripts/make-icons.mjs`
 renders the Apple touch icon and the manifest icons from it through headless Chrome. To
 change them, edit the SVG and re-run; don't touch the PNGs.
@@ -176,6 +183,21 @@ struck-through `~~TODO~~` is a task abandoned and does not count. On a scanned
 page a TODO in the *margin* is an annotation rather than body text, so the import
 appends a `#todo` line to the body to make it the same editable marker; the
 transcript as OCR'd it stays untouched in `body_ocr_raw`.
+
+## Crossed-out words
+
+Words you cross out on the page are dropped from the digital note at import, so it reads the
+way the page means. The photograph and the raw OCR keep them — the model still transcribes a
+strike, which is what stops a crossed-out date being taken as a note's date. Typed notes keep
+whatever you type.
+
+Notes imported before this (2026-09-14) were brought in line by a one-off script, which uses
+the same function as the import:
+
+```bash
+npm run strip-struck             # dry run: which notes would change, by id and count
+npm run strip-struck -- --apply  # each changed note keeps its original in history
+```
 
 ## Summaries
 

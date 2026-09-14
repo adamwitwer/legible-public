@@ -15,8 +15,9 @@
     "start": "npm run start --workspace=server",
     "migrate": "npm run migrate --workspace=server",
     "typecheck": "npm run typecheck --workspace=server && npm run typecheck --workspace=web",
-    "test": "tsx web/src/lib/search.test.ts && tsx web/src/lib/history.test.ts && tsx server/src/lib/segment.test.ts && tsx server/src/lib/split.test.ts && tsx server/src/lib/webauthn.test.ts && tsx server/src/lib/enroll.test.ts && tsx server/src/lib/todo.test.ts && tsx server/src/lib/summarize.test.ts && tsx web/src/lib/summary.test.ts",
+    "test": "tsx web/src/lib/search.test.ts && tsx web/src/lib/history.test.ts && tsx server/src/lib/segment.test.ts && tsx server/src/lib/split.test.ts && tsx server/src/lib/webauthn.test.ts && tsx server/src/lib/enroll.test.ts && tsx server/src/lib/todo.test.ts && tsx server/src/lib/struck.test.ts && tsx server/src/lib/summarize.test.ts && tsx web/src/lib/summary.test.ts",
     "backup": "node --env-file=.env scripts/backup.mjs",
+    "strip-struck": "node --env-file=.env --import tsx scripts/strip-struck.mjs",
     "hooks": "ln -sf ../../scripts/check-no-real-notes.sh .git/hooks/pre-commit && echo 'pre-commit hook installed'"
   },
   "devDependencies": {

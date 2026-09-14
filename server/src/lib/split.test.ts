@@ -46,6 +46,12 @@ check('-1 for an empty tail', findBoundaryPage(pages, '   '), -1);
 check('-1 when there are no pages at all', findBoundaryPage([], 'anything'), -1);
 check('a page with no ocr is skipped, not fatal',
   findBoundaryPage([{ ocr_json: null }, pages[1]!], 'Turning — and'), 1);
+check('matches a page whose raw transcript still carries struck text',
+  findBoundaryPage(
+    [{ ocr_json: { blocks: [{ transcript: 'lorem' }] } },
+     { ocr_json: { blocks: [{ transcript: 'Turning ~~and~~ and turning\n- gyre' }] } }],
+    'Turning and turning\n\n- gyre'),
+  1);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

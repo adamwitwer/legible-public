@@ -38,8 +38,8 @@ Source of truth for requirements: `miniPRD.txt`. Design: `ARCHITECTURE.md`.
   and `+ note` button (2026-09-10), on-request note summaries (2026-09-14). The conventions
   each one depends on are under Conventions below.
 
-`npm test` runs nine suites, 218 assertions: query grammar and search, history, segmentation,
-split, WebAuthn, enroll, TODO markers, and summaries (server and client).
+`npm test` runs ten suites, 231 assertions: query grammar and search, history, segmentation,
+split, WebAuthn, enroll, TODO markers, struck text, and summaries (server and client).
 Phases 3–4 in `ARCHITECTURE.md`. See `README.md` for how to run it.
 
 **Deployed to Render on 2026-08-21**, single web service + Postgres 17, page images in
@@ -100,10 +100,12 @@ These came from `images/` and are easy to get wrong from first principles:
    attribution, not a stray word. Keep `side`, `rotation`, `anchor`, `kind`. Some margin
    text is rotated 90°: the sample has one of each, flat on page 1 and vertical on page 2,
    so a run that reports the same rotation for both is wrong.
-4. **Struck text is retracted, not absent.** Transcribe inside `~~…~~`. Weighting it down in
-   search is planned but not built — today it matches like any other text; tags and TODO
-   markers do ignore it. A struck *date* is never a header date — page 2's `~~Aug 2~~` sits inside the
-   `Aug 1` note, and the `Aug 2` note does not open until page 3.
+4. **Struck text: kept in raw OCR, dropped from the note.** The prompt still transcribes a
+   retraction as `~~…~~`, and `pages.ocr_json` keeps it — a struck *date* is never a header
+   date (page 2's `~~Aug 2~~` sits inside the `Aug 1` note). But note bodies do not carry
+   struck text: `stripStruck` in `server/src/lib/struck.ts` runs at segmentation and at commit
+   (Adam, 2026-09-14). Anything that compares a body to raw OCR must strip the OCR side too —
+   `findBoundaryPage` in `split.ts` does, and margin-note anchoring in `segment.ts` does.
 5. **Bleed-through is on every page.** The OCR prompt must explicitly refuse faint/mirrored text.
 
 **Segmentation tuning (learned from the first real run):** the model's default is to start a
@@ -178,6 +180,16 @@ ever needs to mean "when the photo was taken" for another reason, add an explici
   2.5s timer (9s for failures). A message that is long wraps onto its own line rather than
   ellipsising, but anything meant to be read — a reference, a list — belongs in a panel like
   `web/src/ui/Help.tsx`. `:help` was once a status line, and `:new` was undiscoverable in it.
+- **The service worker never touches `/api/*`.** `web/public/sw.js` caches the app shell only:
+  navigations network-first (cache-first is how a phone runs last week's bundle), hashed
+  `/assets/*` cache-first, icons stale-while-revalidate. Notes already live in IndexedDB; a
+  cached API response would be private data outliving logout. It registers in production
+  builds only, so test offline with `npm run build` and `vite preview`, never the dev server.
+- **Fonts are self-hosted** (`@fontsource`, imported at the top of `styles.css`), and the CSP
+  allows styles and fonts from this origin only. Re-adding a font host means the service
+  worker cannot cache it and the app opens offline in fallback fonts.
+- **Scripts against production print ids and counts, never note text.** `scripts/strip-struck.mjs`
+  is the model: its output lands in terminals and transcripts, and the archive is private.
 - **Tags are a pure function of the body.** Any body edit re-runs `deriveTags` and discards
   anything not in the text, so there is no way to set a tag from the UI that survives the next
   edit. Adding a "mark as todo" button means changing that rule first, not adding a writer.
