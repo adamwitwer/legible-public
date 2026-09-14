@@ -34,7 +34,12 @@ Source of truth for requirements: `miniPRD.txt`. Design: `ARCHITECTURE.md`.
   header-vs-body distinction in `ocr.ts` would fix future notebooks; it cannot fix past
   ones, because `date_text` is stored in `pages.ocr_json` and only re-OCR would change it.
 
-`npm test` covers the query grammar, search, dates, and segmentation (77 assertions).
+- **Since Phase 3, all deployed:** app icons and TODO markers (2026-09-09), a `:help` panel
+  and `+ note` button (2026-09-10), on-request note summaries (2026-09-14). The conventions
+  each one depends on are under Conventions below.
+
+`npm test` runs nine suites, 218 assertions: query grammar and search, history, segmentation,
+split, WebAuthn, enroll, TODO markers, and summaries (server and client).
 Phases 3–4 in `ARCHITECTURE.md`. See `README.md` for how to run it.
 
 **Deployed to Render on 2026-08-21**, single web service + Postgres 17, page images in
@@ -52,9 +57,10 @@ of which cost a failed build or would have cost a production outage:
   `build()` in `server/src/lib/storage.ts` now refuses to start in production without R2
   rather than losing the archive one deploy at a time.
 
-**Still not backed up.** Render's managed Postgres has its own backups, but there is no
-export under Adam's control and no copy of the R2 objects. Worth solving once the archive
-holds a notebook or two.
+**Backed up daily since 2026-08-24.** `npm run backup` writes markdown, a JSON dump of every
+table, and the R2 page images to Dropbox, run by a LaunchAgent — README "Backups" has the
+macOS setup, which is not guessable. The dump has never been restored into a real Postgres,
+so the restore path is still unrehearsed.
 
 **A new note must carry a date.** A bare heading — "Tell me" in the sample, or a bare
 name in the real notebook — is a subject inside the note already in progress, however heading-like it
@@ -76,6 +82,7 @@ without re-reading a page. On the first notebook the rule takes 56 notes to 34.
 | Auth | Passkey / WebAuthn, HttpOnly SameSite=Lax session cookie. One user; do not build an identity system. |
 | Queue | Postgres `jobs` table + `FOR UPDATE SKIP LOCKED`, worked in-process. No Redis. |
 | Typography | Monospace for chrome/prompt/metadata, **proportional for note bodies**. Amber phosphor on warm near-black, not green on black. |
+| Summaries | **Opt-in per note, never searched** — Adam's call (2026-09-14). Server-owned columns, never the body. `claude-opus-5` at low effort, same model as OCR. |
 
 ## Findings from real pages that the code must honor
 
@@ -160,6 +167,15 @@ ever needs to mean "when the photo was taken" for another reason, add an explici
   compares SHA-256 of the body, hashed on both sides — `bodyHash` in `server/src/lib/summarize.ts`
   and `web/src/lib/summary.ts` — and a shared vector in both test files keeps them agreeing.
   Summaries are deliberately not in MiniSearch fields or the `search` tsvector.
+- **App icons are generated, not drawn.** `web/public/favicon.svg` is the only source;
+  `scripts/make-icons.mjs` renders the four PNGs through headless Chrome, because ImageMagick
+  without librsvg quietly mangles arcs and rounded rects. The pre-commit hook allows those
+  four PNGs by exact filename — add a new icon to that list, never widen it to
+  `web/public/*.png`, which is exactly where a stray screenshot would land.
+- **`setStatus` is for acknowledgements, not for reading.** It renders in the header on a
+  2.5s timer (9s for failures). A message that is long wraps onto its own line rather than
+  ellipsising, but anything meant to be read — a reference, a list — belongs in a panel like
+  `web/src/ui/Help.tsx`. `:help` was once a status line, and `:new` was undiscoverable in it.
 - **Tags are a pure function of the body.** Any body edit re-runs `deriveTags` and discards
   anything not in the text, so there is no way to set a tag from the UI that survives the next
   edit. Adding a "mark as todo" button means changing that rule first, not adding a writer.
@@ -200,7 +216,9 @@ not into a test fixture, not into a commit message, not into an issue or PR desc
 (`scripts/check-no-real-notes.sh`) blocks the obvious cases. The hook is a backstop, not
 permission to stop thinking: it cannot recognise a name it has not been told about.
 
-Keep R2 objects private behind short-lived signed URLs; never a public bucket.
+Keep the R2 bucket private. Page images are served through the authenticated API
+(`/api/pages/:id/image`), not signed URLs — so no image URL works outside a live session.
+Never a public bucket.
 
 ## Working agreements
 

@@ -8,13 +8,13 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md) · Agent context: [`AGENTS.md`](AGE
 
 ## Status
 
-**Phase 1 — typed notes.** Passkey auth, create/edit/delete with revision history,
-local-first search, sync.
+**Phases 1 and 2 are built and deployed on Render.** Passkey auth, typed notes with
+revision history, local-first search and sync; and capture — camera upload, a Postgres
+job queue, `claude-opus-5` OCR, segmentation and boundary review, verified against the
+real model. **Phase 3, backfill,** has its first notebook in.
 
-**Phase 2 — capture.** Camera upload, page storage, a Postgres-backed job queue, the OCR
-worker, note segmentation, and boundary review. The pipeline is verified end to end against
-the four sample pages in `images/` with stubbed model output; the live OCR call needs
-`ANTHROPIC_API_KEY` in `.env`.
+Since then: [TODO markers](#todos), [on-request summaries](#summaries), a `:help`
+panel and a `+ note` button, and app icons.
 
 ## Running it locally
 
@@ -35,9 +35,12 @@ in development (`ENROLL_CODE`). That authorises the first passkey; after that, a
 another device only needs an existing signed-in session.
 
 ```bash
-npm test         # query grammar, search, dates, segmentation
+npm test         # search, dates, segmentation, split, auth, TODOs, summaries
 npm run typecheck
 ```
+
+OCR and summaries call Claude, so both need `ANTHROPIC_API_KEY` in `.env`. Everything
+else runs without it.
 
 Page images go to local disk (`.data/blobs`) unless R2 is configured, so no Cloudflare
 account is needed to work on the capture pipeline. To use R2, set `R2_BUCKET`,
@@ -81,7 +84,8 @@ npm run hooks     # installs scripts/check-no-real-notes.sh as pre-commit
 
 The hook blocks staged files under `inbox/` or `.data/`, anything landing in
 `images/` other than the four samples, and any image or PDF elsewhere in the
-tree. It also greps staged text against `.scrub-names`, a gitignored file of
+tree — except the four app icons in `web/public/`, which it allows by exact
+filename. It also greps staged text against `.scrub-names`, a gitignored file of
 names from the real archive — one per line, `#` for comments. That list is
 gitignored on purpose: a roster of colleagues does not belong in a public repo
 any more than their notes do. Without it the hook says so and runs the other
@@ -96,6 +100,10 @@ does not replace reading your own diff.
   full-text search endpoint kept as the fallback path.
 - **`web/`** — React PWA. Dexie holds the local replica, MiniSearch indexes it in
   memory, and the terminal UI never touches the network to search.
+
+**App icons come from one file,** `web/public/favicon.svg`. `node scripts/make-icons.mjs`
+renders the Apple touch icon and the manifest icons from it through headless Chrome. To
+change them, edit the SVG and re-run; don't touch the PNGs.
 
 ### Backfilling a notebook
 
@@ -242,10 +250,11 @@ before:2025-06-15 is:scan
 is:todo tag:meeting          notes with an open TODO
 "exact phrase" tag:ideas
 
-:new    start a note      :scan    capture pages
-:sync   sync now
-:help   command list      :logout  end session
-↑ ↓ move · ⏎ open · esc back to the prompt
+:new      start a note        :scan     capture pages
+:sync     sync now            :help     commands, search, keys
+:enroll   add this device     :devices  list passkeys
+:forget   remove a passkey    :logout   end session
+↑ ↓ move · enter open · esc back to the prompt
 ```
 
 `after:` and `before:` filter on the date **written on the page**, not the day it was
@@ -257,6 +266,12 @@ routing through a screen first, or calling `.click()` afterwards, loses the user
 gesture on iOS and the camera never opens. The photos you take are already
 uploading by the time the scan screen appears. `:scan` still opens that screen
 empty-handed, which is the way in when the pages are already in the photo library.
+
+**Typing a note is one tap too.** `+ note` sits beside `⌾ scan` (a bare `+` on a
+phone), and whatever is in the prompt becomes the start of the note — so a search that
+found nothing is one tap from being written down. Enter on a query with no match does
+the same, and `:new` still works. `:help` opens a panel of every command, filter and
+key; it closes on esc or as soon as you type.
 
 **A note can be discarded on its own in review.** A batch often ends in a
 fragment — the tail of a page that belongs to nothing, or a stray shot — and the
