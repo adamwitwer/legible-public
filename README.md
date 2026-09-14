@@ -131,6 +131,16 @@ that changed after `N`, tombstones included. Writes are keyed by client-generate
 UUID so a queued offline edit replays safely. Conflicts resolve last-write-wins on
 `updated_at`, and the losing version is kept as a revision rather than dropped.
 
+### Which build is on screen
+
+The header shows it — `MMDD.hhmm` in UTC, from
+`__BUILD_ID__` in `web/vite.config.ts`. It is there because a phone gives you no
+other way to tell a stale bundle from a change that did not work: there is no
+hard refresh, and a cache-busting query string proves a fresh fetch but says
+nothing about whether the deploy has finished. The full stamp, in the title
+attribute, carries the commit — `RENDER_GIT_COMMIT` during a Render build,
+`local` otherwise.
+
 ## Splitting a note
 
 A note that swallowed the one after it — the failure mode of "a new note
@@ -219,14 +229,6 @@ both of which fail in ways that do not name their own cause:
 
 Check it with `launchctl print gui/$UID/com.adamwitwer.legible-backup | grep
 "last exit code"`.
-
-**The header shows which build you are looking at** — `MMDD.hhmm` in UTC, from
-`__BUILD_ID__` in `web/vite.config.ts`. It is there because a phone gives you no
-other way to tell a stale bundle from a change that did not work: there is no
-hard refresh, and a cache-busting query string proves a fresh fetch but says
-nothing about whether the deploy has finished. The full stamp, in the title
-attribute, carries the commit — `RENDER_GIT_COMMIT` during a Render build,
-`local` otherwise.
 
 ## Commands in the app
 

@@ -99,8 +99,9 @@ These came from `images/` and are easy to get wrong from first principles:
    attribution, not a stray word. Keep `side`, `rotation`, `anchor`, `kind`. Some margin
    text is rotated 90°: the sample has one of each, flat on page 1 and vertical on page 2,
    so a run that reports the same rotation for both is wrong.
-4. **Struck text is retracted, not absent.** Transcribe inside `~~…~~`, weight it down in
-   search. A struck *date* is never a header date — page 2's `~~Aug 2~~` sits inside the
+4. **Struck text is retracted, not absent.** Transcribe inside `~~…~~`. Weighting it down in
+   search is planned but not built — today it matches like any other text; tags and TODO
+   markers do ignore it. A struck *date* is never a header date — page 2's `~~Aug 2~~` sits inside the
    `Aug 1` note, and the `Aug 2` note does not open until page 3.
 5. **Bleed-through is on every page.** The OCR prompt must explicitly refuse faint/mirrored text.
 

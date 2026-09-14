@@ -1,6 +1,8 @@
 # Legible — Architecture
 
 Draft 02 · 2026-08-20 · derived from `miniPRD.txt` and the Phase 0 OCR spike against `images/`
+· **Revised 2026-09-14 against the code as built** — where design and code disagreed, this now
+says what the code does, and marks what was planned but not built.
 
 A personal archive that turns handwritten notebooks into something you can grep.
 One user, terminal aesthetic, sub-frame search.
@@ -35,9 +37,10 @@ So: a note is an entry spanning one or more pages, confirming the multi-page mod
 segmentation happens at the **block** level, not the page level. A page can end one note
 and begin another.
 
-The boundary signal is learnable: a short line, left-aligned at the margin, naming a
-person or topic, often followed by a date or a long dash. The model is asked to emit
-segmentation candidates; you confirm them in a review step.
+The boundary signal is a **dated header**: a short line naming a person or meeting, with a
+date on the same line. A heading without a date is a subject inside the note in progress —
+the original "a date or a long dash" signal over-segmented the real notebook (see the
+prompt rules below). The model proposes boundaries; you confirm them in a review step.
 
 ### 2. Dates on the page are partial
 
@@ -47,7 +50,8 @@ segmentation candidates; you confirm them in a review step.
 Resolution order: an explicit year on the page → the year implied by neighbouring pages
 in the same import batch → the photo's EXIF capture date → the upload date. Alongside
 `written_on` the note stores `written_on_precision` (`day` / `month` / `year` /
-`inferred`), so `before:` and `after:` filters can be honest about what they are
+`inferred` / `sequence` — the last for an undated entry that takes the date of the dated
+one before it), so `before:` and `after:` filters can be honest about what they are
 filtering on, and the UI can show an inferred date differently from a read one.
 
 ### 3. Marginalia is positional and carries meaning
@@ -65,16 +69,21 @@ it. A name with a question mark is someone to **follow up** with. A phrase such 
 Flattening any of them into the body reading order would corrupt the meaning — a speaker
 name would land mid-sentence, a qualifier would attach to the wrong claim. They are
 captured as structured annotations with a side, an anchor to the block they sit beside,
-and a type. They are indexed for search but rendered in the margin, where they belong.
+and a type. **As built they appear only in capture review**, beside the proposed note — they
+are not yet indexed for search, synced to devices, or shown in the editor. Two features reach
+them server-side: a margin `TODO` becomes a marker line in the body at import, and a summary
+sends a scan's annotations to the model so it knows who said what.
 
 Rotated text needs calling out explicitly in the prompt or it gets skipped.
 
 ### 4. Struck text is retracted, not absent
 
 Page 2 carries a struck `Aug 2` — a date started and abandoned. It matters twice over.
-Struck spans are transcribed wrapped in `~~…~~` and given lower search weight: findable
-if you go looking, never read as current, because silently dropping them loses the fact
-that you changed your mind, which is often the interesting part. And a struck date must
+Struck spans are transcribed wrapped in `~~…~~`: findable if you go looking, never read as
+current, because silently dropping them loses the fact
+that you changed your mind, which is often the interesting part. (A lower search weight for
+struck text was planned and is not built — it matches like any other text — though tags and
+TODO markers do ignore it.) And a struck date must
 never be taken as a header date — the note it sits inside is `Aug 1`, and the `Aug 2`
 note does not begin until partway down the next page.
 
@@ -108,7 +117,8 @@ phone on cellular costs 60–200 ms before the database does any work — a perc
 on every keystroke, and unavailable with no signal.
 
 One user means a bounded corpus, so the whole thing is synced down and searched in
-memory. **~2–5 ms per keystroke, and it works offline.**
+memory. **~2–5 ms per keystroke, and it works offline** — once the app is loaded. There is no
+service worker yet, so opening it cold with no signal still fails.
 
 At ~1.5 KB of text per note, 5,000 notes is ~7 MB raw and under 3 MB gzipped — a one-time
 cost on a new device, then deltas. The in-RAM index sits around 15 MB.
@@ -141,6 +151,8 @@ cheap insurance against a bad edit noticed three months later.
 
 ## Data model
 
+The shape, trimmed of constraints and defaults. `server/migrations/` is the source of truth.
+
 ```sql
 create table notes (
   id            uuid primary key,        -- client-generated → offline creates are idempotent
@@ -149,25 +161,51 @@ create table notes (
   body          text not null default '',    -- markdown; edited transcript or typed text
   body_ocr_raw  text,                    -- untouched model output, never overwritten
   written_on    date,                    -- date on the page; what date search filters on
-  written_on_precision text,             -- 'day' | 'month' | 'year' | 'inferred'
-  tags          text[] not null default '{}',
+  written_on_precision text,             -- 'day' | 'month' | 'year' | 'inferred' | 'sequence'
+  tags          text[] not null default '{}',   -- derived from the body on every save
   ocr_status    text,                    -- pending | running | done | failed
   ocr_model     text,
   ocr_run_at    timestamptz,
   confidence    real,
+  summary           text,                -- on-request AI summary; server-owned, never searched
+  summary_body_hash text,                -- SHA-256 of the body it was made from → "stale"
+  summary_model     text,
+  summarized_at     timestamptz,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
   deleted_at    timestamptz,             -- tombstone; sync must see deletions
   seq           bigint not null,         -- sync cursor; bumped by trigger on INSERT *and* UPDATE
   search        tsvector generated always as (
                   setweight(to_tsvector('english', coalesce(title,'')), 'A') ||
-                  setweight(to_tsvector('english', body), 'B')
+                  setweight(to_tsvector('english', coalesce(body,'')), 'B')
                 ) stored
 );
 create index on notes using gin(search);
 create index on notes using gin(body gin_trgm_ops);  -- fuzzy, for OCR near-misses
 create index on notes(seq);
 create index on notes(written_on);
+
+-- One capture session. Pages are read one by one; notes are proposed across the batch.
+create table batches (
+  id           uuid primary key,
+  status       text not null,            -- uploading | ocr | review | committed | failed
+  proposed     jsonb,                    -- segmentation output awaiting review
+  created_at   timestamptz not null default now(),
+  committed_at timestamptz
+);
+
+create table pages (
+  id           uuid primary key,
+  batch_id     uuid references batches(id) on delete cascade,
+  idx          int not null,             -- shot order within the batch
+  storage_key  text not null,            -- R2 in production, local disk in dev
+  content_type text not null,
+  bytes int, width int, height int,
+  shot_at      timestamptz,              -- EXIF, or --dated on backfill; the year fallback
+  ocr_status   text not null,            -- pending | running | done | failed
+  ocr_json     jsonb,                    -- raw model output: OCR is paid for once, per page
+  ocr_model    text, ocr_run_at timestamptz, confidence real, error text
+);
 
 -- A note spans pages; a page may be shared by two notes ("The Second Coming", mid-page-3).
 create table note_pages (
@@ -178,23 +216,15 @@ create table note_pages (
   primary key (note_id, page_id)
 );
 
-create table pages (
-  id      uuid primary key,
-  r2_key  text not null,
-  width   int, height int,
-  shot_at timestamptz,                   -- EXIF; the year-resolution fallback
-  batch   uuid                           -- import batch, for neighbour date inference
-);
-
 -- Marginalia, kept positional rather than flattened into the body.
 create table annotations (
   id        uuid primary key,
   note_id   uuid references notes(id) on delete cascade,
-  page_id   uuid references pages(id) on delete cascade,
+  page_id   uuid references pages(id) on delete set null,
   side      text,                        -- 'left' | 'right' | 'top' | 'bottom'
-  rotation  int default 0,               -- 90 for the rotated right-margin note on page 1
+  rotation  int default 0,               -- 90 for the vertical margin note on page 2
   anchor    text,                        -- the body line it sits beside
-  kind      text,                        -- 'speaker' | 'question' | 'qualifier' | 'note'
+  kind      text,                        -- 'speaker' | 'question' | 'qualifier' | 'note' | 'todo'
   text      text not null
 );
 
@@ -208,10 +238,14 @@ create table note_revisions (
 );
 
 create table jobs (                      -- the entire queue. no Redis.
-  id bigserial primary key, kind text, payload jsonb,
-  run_after timestamptz default now(), attempts int default 0,
-  locked_at timestamptz, last_error text
+  id bigserial primary key, kind text not null, payload jsonb not null,
+  status text not null,                  -- pending | running | done | failed
+  run_after timestamptz default now(), attempts int default 0, max_attempts int default 3,
+  locked_at timestamptz, last_error text, created_at timestamptz default now()
 );
+
+-- Auth: credentials (passkeys, each with the RP ID it was registered under), sessions,
+-- and challenges — one row per WebAuthn ceremony. See Access and durability.
 ```
 
 **The detail that bites people:** `seq` must bump on *update* as well as insert, or edits
@@ -226,9 +260,14 @@ Deliberately boring — one user across a few devices does not need CRDTs.
   time, plus the new cursor.
 - `POST /api/notes` upserts a batch keyed by client-generated UUID, so replaying a queued
   offline write is harmless.
-- Conflicts resolve last-write-wins on `updated_at`, with the losing body appended rather
-  than dropped, and both preserved in `note_revisions`. For one person this fires
-  approximately never; when it does, you would rather see both.
+- Conflicts resolve last-write-wins on `updated_at`. A push that is not newer than the stored
+  row is not applied, but its body is kept in `note_revisions`, so nothing is lost. For one
+  person this fires approximately never; when it does, the loser is in history.
+- Server-side writes that are not edits — a summary — must not touch `updated_at`, or they
+  would win that comparison against edits made while they ran. The `seq` trigger still
+  carries them down.
+- The client syncs every two minutes and whenever the browser comes back online. Edits made
+  offline sit in the local replica marked dirty and are pushed on the next sync.
 
 ---
 
@@ -267,6 +306,8 @@ Prompt rules earned directly from the sample pages:
   grouping several lines become a described grouping.
 - **Keep struck text**, wrapped in `~~…~~`.
 - **Capture margin text separately**, with its side and rotation. Read rotated text.
+- **Classify it** — speaker, question, qualifier, todo, or note. A written `TODO` beside a
+  line is kind `todo`; a hand-drawn box is not, being indistinguishable from a stray mark.
 - **Ignore bleed-through** — faint, low-contrast, or mirrored text is the reverse of the page.
 - **Describe sketches and arrows** in brackets so they remain findable.
 
@@ -295,12 +336,14 @@ pages/day lands near $5/month.
 The phone camera is reached through
 `<input type="file" accept="image/*" capture="environment">` — no native app, no App
 Store, works from the installed PWA on iOS and Android. Shoot pages continuously; they
-upload in the background and the note appears immediately as `pending`, filling in when
-the worker finishes.
+upload into a **batch** as you go, and the worker reads each page as it lands. **No note
+exists until review:** once every page is read, segmentation proposes notes across the
+batch, and nothing is written to `notes` until you save.
 
-After a multi-page import, a **boundary review** step shows the proposed note splits as a
-filmstrip. Merge, split, retitle, fix a date. This is the one place the pipeline asks for
-help, and it is where page-8-style mid-page boundaries get confirmed.
+The **boundary review** screen shows each proposed note with its page thumbnails and margin
+annotations. Merge up, discard, retitle, fix a date. This is the one place the pipeline asks
+for help, and it is where page-3-style mid-page boundaries get confirmed. A boundary missed
+here can still be fixed later from the editor with **split here**.
 
 ---
 
@@ -322,10 +365,14 @@ notes ~ 2,481 notes ────────────────────
 ```
 
 - **Type anything** — results re-render on every keystroke against the local index.
-- **`:scan`** camera · **`:new`** blank note · **`:e`** edit · **`:o`** original photograph
-- **`↑`/`↓`** move, **`⏎`** open, **`esc`** back to the prompt. Never reach for the mouse.
-- On mobile the prompt pins above the keyboard with a camera button beside it.
-- **`motd`** on the boot screen surfaces a note from this day a year ago.
+- **`:new`** or **`+ note`** starts a typed note · **`:scan`** or **`⌾ scan`** captures pages ·
+  **`:help`** opens a panel of everything else.
+- **`↑`/`↓`** move, **`enter`** open, **`esc`** back to the prompt. Enter on a query with no
+  match starts a note with it. Never reach for the mouse.
+- On a phone the prompt sits at the bottom with `+` and `⌾ scan` beside it.
+- In a note: **split here**, **history**, and **summarize**.
+- *Not built:* `motd` (a note from this day a year ago), and opening a note's original
+  photographs from the editor — `GET /api/notes/:id/pages` exists, but nothing calls it yet.
 
 Query grammar — bare words match fuzzily, prefixed tokens filter, and they compose:
 
@@ -333,6 +380,7 @@ Query grammar — bare words match fuzzily, prefixed tokens filter, and they com
 kubernetes retro
 tag:meeting after:2026-01 budget
 before:2025-06-15 is:scan
+is:todo tag:meeting
 "exact phrase" tag:ideas
 ```
 
@@ -361,7 +409,7 @@ requirement — and free Postgres expires.
 | PWA + API + OCR worker | Render Web Service (one service) | ~$7 |
 | Database | Render Postgres | ~$7 |
 | Page images | Cloudflare R2 | ~$0 |
-| OCR | Claude API | ~$5 |
+| OCR + summaries | Claude API | ~$5 |
 
 **Amended in Phase 1 — one service, not two.** Draft 02 split the PWA onto a
 Render Static Site. That does not work with passkeys: WebAuthn scopes a credential to a
@@ -369,7 +417,7 @@ relying-party ID, which must be the registrable domain. A split origin
 (`legible.onrender.com` + `legible-api.onrender.com`) would need an RP ID of
 `onrender.com`, which is on the Public Suffix List and rejected by browsers. Serving both
 from one origin also removes CORS and `SameSite=None` from the session cookie. The app
-shell is small and service-worker cached, so losing the CDN costs little. On a custom
+shell is small, so losing the CDN costs little. On a custom
 domain the split becomes possible again — not worth doing.
 
 **~$15/month** steady state, plus a one-time ~$6 backlog. Figures are list prices —
@@ -401,7 +449,7 @@ invented for this repo precisely so the repo can be public and the archive not.
   enrollment with a one-time code from an env var; session is an HttpOnly, SameSite=Lax
   cookie. It is one user; do not build an identity system.
 - **Rate limits, and what they actually buy.** The per-IP caps — 300/min globally, 20/min
-  on ceremony endpoints — are keyed on `X-Forwarded-For`, which the caller writes. Anyone
+  on ceremony endpoints and on summaries — are keyed on `X-Forwarded-For`, which the caller writes. Anyone
   willing to rotate it walks past them, so they are protection against runaway clients and
   accidents, not against a deliberate attacker, and nothing security-critical rests on them.
 - **The enroll code's entropy is what protects it, not a rate limit.** This took three
@@ -426,10 +474,35 @@ invented for this repo precisely so the repo can be public and the archive not.
   `frame-ancestors 'none'`, HSTS in production, `Referrer-Policy: no-referrer`, nosniff.
 - **Failures do not explain themselves to strangers.** Verification errors log the reason
   and return a bare `verification_failed`.
-- **R2 objects stay private**, served through short-lived signed URLs. Never a public bucket.
-- **Nightly export** to R2 *and* your own storage: one markdown file per note plus its
-  images, in a plain directory tree. Render's backups protect the service; the markdown
-  export protects *you*, and means the archive outlives the app, Render, and this design.
+- **R2 objects stay private**, served through the authenticated API rather than signed URLs,
+  so no image URL works outside a live session. Never a public bucket.
+- **Daily backup** to Dropbox (`npm run backup`, run by a LaunchAgent): one markdown file per
+  note, a JSON dump of every table, and the page images. Render's backups protect the
+  service; this protects *you*, and means the archive outlives the app, Render, and this
+  design. The dump has not yet been restored into a real Postgres.
+
+---
+
+## Added after launch
+
+### TODO markers
+
+A note with `TODO` in it gets `[ ]` in the list, and deleting the word checks it off. The
+design choice is that **there is no checked state**: `todo` is a tag derived from the body on
+every save, so it cannot drift from the text, and history already recovers a mistake. The
+cost is that no tag can be set from the UI independently of the body. A struck `~~TODO~~`
+does not count. A TODO in a scan's margin is an annotation, which the list cannot see, so
+import appends a `#todo` line to the body; `body_ocr_raw` keeps the transcript as read.
+
+### Summaries
+
+On request, one note at a time, `claude-opus-5` at low effort writes a paragraph or two.
+Stored in their own columns, never the body, and **never searched** — a search should only
+find words you wrote. Staleness is a SHA-256 of the body, stamped server-side and recomputed
+on the client from what is on screen. The prompt carries this archive's transcription
+conventions: struck text is retracted, `[?]` is a gap rather than a name to guess, and a
+scan's margin annotations go to the model too. A summary costs about what OCRing one page
+does.
 
 ---
 
@@ -437,17 +510,19 @@ invented for this repo precisely so the repo can be public and the archive not.
 
 **0. ~~Spike: can it read your handwriting?~~ — done. Yes.**
 
-1. **Typed notes, end to end.** Schema, sync, local index, terminal UI, editing, revision
+1. **~~Typed notes, end to end~~ — done, deployed 2026-08-21.** Schema, sync, local index, terminal UI, editing, revision
    history, passkey auth, deployed. No camera yet. At the end you have a fast notes app
    you would use daily, and the search architecture is proven under real typing.
 
-2. **Capture pipeline.** Camera input, R2 uploads, jobs table, OCR worker, the block
+2. **~~Capture pipeline~~ — done.** Camera input, R2 uploads, jobs table, OCR worker, the block
    segmentation prompt, annotations, pending states, boundary review.
 
-3. **Backfill the 200 pages.** A script, not a feature — submit through the Batch API,
-   review the boundaries, done in an afternoon for about $3.
+3. **Backfill the 200 pages — in progress.** A script, not a feature. As built it drives the
+   app's own capture API (`scripts/backfill.mjs --dated`) rather than the Batch API, so pages
+   go through the same review. The first notebook, 96 pages, came to about $4.
 
-4. **The rest.** Offline write queue, `motd`, markdown export to Dropbox/Tailnet, and
+4. **The rest.** ~~Offline write queue~~ (offline edits are kept dirty and pushed on
+   reconnect), `motd`, ~~markdown export to Dropbox~~ (the daily backup), and
    optionally a second search rail — embeddings in `pgvector`, where a `?` prefix asks a
    question instead of matching keywords. Deliberately last: keyword search over your own
    words is usually what you actually want, and it is instant.
