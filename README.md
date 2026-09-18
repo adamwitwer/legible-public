@@ -313,3 +313,8 @@ The scan and review screens hide the prompt: there is nothing to type on either,
 and a focused input on a phone costs half the screen — the prompt keeping focus
 through `:scan` is what used to leave you looking at blank space with the controls
 scrolled off the top. Escape is handled inside the scan screen instead.
+
+An open note hides the prompt too. It could only run a search whose results sat hidden
+behind the editor, and Escape in it cleared the query instead of closing the note. The
+note's own bar carries **close (esc)** — **‹ notes** on a phone — and closing a note puts
+focus back in the prompt on a desktop.

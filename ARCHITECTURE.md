@@ -355,8 +355,9 @@ here can still be fixed later from the editor with **split here**.
 ## Interface
 
 The terminal aesthetic is not only decoration — a command line is genuinely the fastest
-interface for "find the thing", and it lets the app have almost no chrome. One persistent
-prompt. Typing filters; it does not navigate.
+interface for "find the thing", and it lets the app have almost no chrome. One prompt, on
+the list — an open note or the scan screen takes the page. Typing filters; it does not
+navigate.
 
 ```
 notes ~ 2,481 notes ─────────────────────────── last sync 2m ago

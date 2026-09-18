@@ -173,14 +173,15 @@ export default function App() {
     setScanFiles(null);
   }, []);
 
-  // The prompt unmounts while scanning, so focus has to be handed back when it
-  // returns — otherwise it falls to <body> and the arrow keys go dead. Not on a
-  // phone, where refocusing only reopens the keyboard over the note list.
+  // The prompt unmounts while scanning and while a note is open, so focus has to
+  // be handed back when it returns — otherwise it falls to <body> and the arrow
+  // keys go dead. Not on a phone, where refocusing only reopens the keyboard over
+  // the note list.
   useEffect(() => {
-    if (phase !== 'ready' || capturing) return;
+    if (phase !== 'ready' || capturing || open) return;
     if (window.matchMedia('(pointer: coarse)').matches) return;
     promptRef.current?.focus();
-  }, [capturing, phase]);
+  }, [capturing, open, phase]);
 
   // ------------------------------------------------------------ commands
 
@@ -305,9 +306,8 @@ export default function App() {
   const closeNote = useCallback(() => {
     if (open) selectAfterSearch.current = open.id;
     setOpen(null);
-    // The prompt is always mounted, so this lands before the editor unmounts —
-    // without it focus falls to <body> and the arrow keys go dead.
-    promptRef.current?.focus();
+    // The prompt is not mounted while a note is open. Focus goes back to it from
+    // the effect above once it returns — a focus() here would find nothing.
   }, [open]);
 
   const onSplit = useCallback(async (at: number) => {
@@ -329,7 +329,6 @@ export default function App() {
       setSynced(await lastSync());
       selectAfterSearch.current = res.id;
       setOpen(null);
-      promptRef.current?.focus();
       setStatus(
         res.pages_divided === false && res.pages
           ? `split — pages could not be divided, both notes keep all ${res.pages}`
@@ -398,7 +397,6 @@ export default function App() {
     await deleteNote(open.id);
     setOpen(null);
     await refresh();
-    promptRef.current?.focus();
     setStatus('deleted');
   }, [open, refresh]);
 
@@ -468,14 +466,18 @@ export default function App() {
       {/* The scan screen gets the whole height and none of the keyboard: there
           is nothing to type there, and a focused input on a phone costs half
           the screen. Escape is handled inside <Capture> instead. */}
-      {!capturing && (
+      {/* Nor while a note is open. There it could only run a search whose results
+          sat hidden behind the editor — Enter would then jump to a note you could
+          not see — and Escape in it cleared the query rather than closing the
+          note. The note's own bar carries "close (esc)" / "‹ notes". */}
+      {!capturing && !open && (
         <footer className="prompt">
           <span className="prompt-caret">&gt;</span>
           <input
             ref={promptRef}
             className="prompt-input"
             value={query}
-            placeholder={open ? 'esc to return to search' : 'type to search · :help'}
+            placeholder="type to search · :help"
             autoFocus
             autoComplete="off"
             autoCorrect="off"
