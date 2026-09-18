@@ -173,15 +173,23 @@ export default function App() {
     setScanFiles(null);
   }, []);
 
-  // The prompt unmounts while scanning and while a note is open, so focus has to
-  // be handed back when it returns — otherwise it falls to <body> and the arrow
-  // keys go dead. Not on a phone, where refocusing only reopens the keyboard over
-  // the note list.
-  useEffect(() => {
-    if (phase !== 'ready' || capturing || open) return;
+  /**
+   * Put focus in the prompt — except on a touch device. There focus does nothing
+   * but decide whether the on-screen keyboard covers the list, and a keyboard
+   * nobody asked for is worse than no focus. Tapping the prompt still opens it.
+   */
+  const focusPrompt = useCallback(() => {
     if (window.matchMedia('(pointer: coarse)').matches) return;
     promptRef.current?.focus();
-  }, [capturing, open, phase]);
+  }, []);
+
+  // The prompt unmounts while scanning and while a note is open, so focus has to
+  // be handed back when it returns — otherwise it falls to <body> and the arrow
+  // keys go dead. This is also what focuses it on load: it has no autoFocus.
+  useEffect(() => {
+    if (phase !== 'ready' || capturing || open) return;
+    focusPrompt();
+  }, [capturing, open, phase, focusPrompt]);
 
   // ------------------------------------------------------------ commands
 
@@ -450,7 +458,7 @@ export default function App() {
           onClearSummary={onClearSummary}
         />
       ) : help ? (
-        <Help onClose={() => { setHelp(false); promptRef.current?.focus(); }} />
+        <Help onClose={() => { setHelp(false); focusPrompt(); }} />
       ) : (
         <Results
           hits={hits}
@@ -478,7 +486,10 @@ export default function App() {
             className="prompt-input"
             value={query}
             placeholder="type to search · :help"
-            autoFocus
+            // No autoFocus. The prompt remounts when a note or the scan screen
+            // closes, inside the tap that closed it, and autoFocus would pop the
+            // phone keyboard over the list. focusPrompt() is the one way in, and
+            // it skips touch devices.
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}

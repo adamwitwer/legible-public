@@ -195,9 +195,12 @@ ever needs to mean "when the photo was taken" for another reason, add an explici
 - **Scripts against production print ids and counts, never note text.** `scripts/strip-struck.mjs`
   is the model: its output lands in terminals and transcripts, and the archive is private.
 - **The prompt is not mounted while a note is open or while scanning.** Focus comes back to it
-  through one effect in `App.tsx` once it remounts, skipped on touch devices where it would
-  pop the keyboard over the list. A synchronous `promptRef.current?.focus()` alongside
-  `setOpen(null)` finds nothing — the prompt does not exist yet — so don't rely on one.
+  through one effect in `App.tsx` once it remounts, via `focusPrompt()`, which does nothing on
+  touch devices — there, focus only pops the keyboard over the list. The input deliberately
+  has no `autoFocus`: it remounts inside the tap that closed a note, and `autoFocus` then
+  opens the phone keyboard regardless of the effect's check. That shipped once (2026-09-18).
+  A synchronous `promptRef.current?.focus()` beside `setOpen(null)` finds nothing — the
+  prompt does not exist yet — so don't rely on one.
 - **Tags are a pure function of the body.** Any body edit re-runs `deriveTags` and discards
   anything not in the text, so there is no way to set a tag from the UI that survives the next
   edit. Adding a "mark as todo" button means changing that rule first, not adding a writer.
