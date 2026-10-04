@@ -15,8 +15,9 @@ const COMMANDS: [string, string][] = [
   [':sync', 'push and pull now'],
   [':enroll', 'add a passkey for this device'],
   [':devices', 'list passkeys'],
-  [':forget <id>', 'remove a passkey, by an id from :devices'],
+  [':forget <id>', 'remove a passkey and sign out every device it opened'],
   [':logout', 'end the session'],
+  [':logout others', 'sign out every other device, keeping their passkeys'],
   [':help', 'this'],
 ];
 

@@ -26,6 +26,9 @@ const ceremonyLimit = { rateLimit: { max: 20, timeWindow: '1 minute' } };
 const COOKIE = 'legible_session';
 const hash = (t: string) => createHash('sha256').update(t).digest('hex');
 
+/** Thrown inside a transaction to roll it back when :forget matches nothing. */
+class UnknownCredential extends Error {}
+
 /** Single fixed user — there is exactly one of them. */
 const USER_ID = new TextEncoder().encode('adam');
 const USER_NAME = 'adam';
@@ -76,12 +79,16 @@ async function takeChallenge(challenge: string | null, kind: 'register' | 'authe
   return row?.challenge ?? null;
 }
 
-async function issueSession(reply: FastifyReply) {
+/**
+ * Every session records the passkey that opened it, so forgetting that passkey
+ * can end the sessions it opened — see migrations/009_session_credential.sql.
+ */
+async function issueSession(reply: FastifyReply, credentialId: string) {
   const token = randomBytes(32).toString('base64url');
   const maxAge = env.sessionDays * 24 * 60 * 60;
   await sql`
-    insert into sessions (token, expires_at)
-    values (${hash(token)}, now() + ${`${env.sessionDays} days`}::interval)
+    insert into sessions (token, expires_at, credential_id)
+    values (${hash(token)}, now() + ${`${env.sessionDays} days`}::interval, ${credentialId})
   `;
   reply.setCookie(COOKIE, token, {
     httpOnly: true,
@@ -91,6 +98,12 @@ async function issueSession(reply: FastifyReply) {
     maxAge,
   });
 }
+
+/** The stored form of the caller's session token, or '' when there is none. */
+const callerSession = (req: FastifyRequest) => {
+  const token = req.cookies[COOKIE];
+  return token ? hash(token) : '';
+};
 
 export async function currentSession(req: FastifyRequest): Promise<boolean> {
   const token = req.cookies[COOKIE];
@@ -133,8 +146,22 @@ export default async function authRoutes(app: FastifyInstance) {
     // another domain cannot sign in, but it is still a row someone has to clean up,
     // and a pane that hides it makes it impossible to :forget.
     const rows = await sql<
-      { id: string; label: string | null; rp_id: string; created_at: Date; last_used_at: Date | null }[]
-    >`select id, label, rp_id, created_at, last_used_at from credentials order by created_at`;
+      {
+        id: string;
+        label: string | null;
+        rp_id: string;
+        created_at: Date;
+        last_used_at: Date | null;
+        sessions: number;
+      }[]
+    >`
+      select c.id, c.label, c.rp_id, c.created_at, c.last_used_at,
+             count(s.token)::int as sessions
+      from credentials c
+      left join sessions s on s.credential_id = c.id and s.expires_at > now()
+      group by c.id
+      order by c.created_at
+    `;
     // The id is truncated: it identifies a device well enough to tell them
     // apart without handing the whole credential ID to anything that asks.
     return rows.map((r) => ({
@@ -144,6 +171,7 @@ export default async function authRoutes(app: FastifyInstance) {
       usable: r.rp_id === env.rpId,
       created_at: r.created_at,
       last_used_at: r.last_used_at,
+      sessions: r.sessions,
     }));
   });
 
@@ -152,17 +180,74 @@ export default async function authRoutes(app: FastifyInstance) {
   // escape hatch when every passkey has become unusable — and since a domain move
   // now leaves zero usable credentials on its own, the hatch opens there without
   // anyone having to delete anything first.
+  //
+  // Forgetting a passkey also signs out everything it opened. That is the point
+  // of forgetting a lost phone's passkey, and until migration 009 it did not
+  // happen: the phone's cookie outlived its credential by up to SESSION_DAYS.
+  // A synced passkey (iCloud Keychain, Google Password Manager) is ONE credential
+  // across several devices, so forgetting it signs all of them out — including,
+  // possibly, the caller. `signedOut` tells the client which.
   app.delete<{ Params: { id: string } }>(
     '/api/auth/credentials/:id',
     { preHandler: requireAuth },
     async (req, reply) => {
-      const [gone] = await sql<{ id: string }[]>`
-        delete from credentials where left(id, 12) = ${req.params.id} returning id
-      `;
-      if (!gone) return reply.code(404).send({ error: 'unknown_credential' });
-      return { ok: true, remaining: await credentialCount() };
+      const mine = callerSession(req);
+      const result = await sql.begin(async (tx) => {
+        const doomed = tx`select id from credentials where left(id, 12) = ${req.params.id}`;
+        // Sessions go first and explicitly, so the count is real; the foreign
+        // key's ON DELETE CASCADE is the backstop, not the mechanism.
+        //
+        // NULL credential_id means the session predates 009 and nobody knows
+        // which passkey opened it — it may well be the lost phone's. Those end
+        // too, except the caller's own: whoever is holding it is not the device
+        // being forgotten.
+        // Expired rows go too, but only live ones count as "signed out".
+        const ended = await tx<{ token: string; live: boolean }[]>`
+          delete from sessions
+          where credential_id in (${doomed})
+             or (credential_id is null and token <> ${mine})
+          returning token, expires_at > now() as live
+        `;
+        const gone = await tx<{ id: string }[]>`
+          delete from credentials where id in (${doomed}) returning id
+        `;
+        if (!gone.length) {
+          // Nothing matched, so nothing should have been signed out either —
+          // not even the legacy sessions. Roll the whole thing back.
+          throw new UnknownCredential();
+        }
+        return { ended };
+      }).catch((err) => {
+        if (err instanceof UnknownCredential) return null;
+        throw err;
+      });
+      if (!result) return reply.code(404).send({ error: 'unknown_credential' });
+
+      const signedOut = result.ended.some((s) => s.token === mine);
+      if (signedOut) reply.clearCookie(COOKIE, { path: '/' });
+      return {
+        ok: true,
+        remaining: await credentialCount(),
+        sessionsEnded: result.ended.filter((s) => s.live).length,
+        signedOut,
+      };
     },
   );
+
+  /**
+   * Sign out every device but this one, keeping every passkey.
+   *
+   * :forget is the wrong tool when the passkey is synced: the same credential
+   * lives on the phone that went missing and on the laptop you are typing on,
+   * and removing it would mean re-enrolling everything you still have.
+   */
+  app.post('/api/auth/sessions/end-others', { preHandler: requireAuth }, async (req) => {
+    const ended = await sql<{ live: boolean }[]>`
+      delete from sessions where token <> ${callerSession(req)}
+      returning expires_at > now() as live
+    `;
+    return { ok: true, sessionsEnded: ended.filter((s) => s.live).length };
+  });
 
   // --- registration -------------------------------------------------------
 
@@ -284,7 +369,7 @@ export default async function authRoutes(app: FastifyInstance) {
           rp_id      = excluded.rp_id
       `;
 
-      await issueSession(reply);
+      await issueSession(reply, credential.id);
       return { ok: true };
     },
   );
@@ -346,7 +431,7 @@ export default async function authRoutes(app: FastifyInstance) {
       set counter = ${verification.authenticationInfo.newCounter}, last_used_at = now()
       where id = ${cred.id}
     `;
-    await issueSession(reply);
+    await issueSession(reply, cred.id);
     return { ok: true };
   },
   );

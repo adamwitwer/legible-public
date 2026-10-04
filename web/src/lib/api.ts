@@ -33,6 +33,7 @@ export const api = {
   loginFinish: (response: unknown) =>
     req('/api/auth/login/finish', { method: 'POST', body: JSON.stringify({ response }) }),
   logout: () => req('/api/auth/logout', { method: 'POST' }),
+  endOtherSessions: () => req('/api/auth/sessions/end-others', { method: 'POST' }),
   credentials: () => req('/api/auth/credentials'),
   forgetCredential: (id: string) =>
     req(`/api/auth/credentials/${id}`, { method: 'DELETE' }),

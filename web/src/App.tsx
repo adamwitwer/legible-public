@@ -214,7 +214,28 @@ export default function App() {
         await startNote(rest.join(' '));
         return true;
       case 'sync':   void runSync(); setQuery(''); return true;
-      case 'logout': await api.logout(); setPhase('auth'); return true;
+      case 'logout': {
+        if (rest[0] === 'others') {
+          // For a lost device whose passkey is synced to the ones you still
+          // have: :forget would take this device's passkey with it.
+          setQuery('');
+          try {
+            const { sessionsEnded } = await api.endOtherSessions();
+            if (devices) setDevices(await api.credentials());
+            setStatus(
+              sessionsEnded === 0
+                ? 'no other device was signed in'
+                : `signed out ${sessionsEnded} other session${sessionsEnded === 1 ? '' : 's'}`,
+            );
+          } catch (e: any) {
+            setStatus(`could not sign out: ${e?.message ?? 'unknown error'}`);
+          }
+          return true;
+        }
+        await api.logout();
+        setPhase('auth');
+        return true;
+      }
       case 'scan':   startScan(null); return true;
       case 'enroll': {
         // Adds a passkey for the machine you are already signed in on. The
@@ -245,12 +266,18 @@ export default function App() {
         setQuery('');
         if (!rest[0]) { setStatus('usage: :forget <id from :devices>'); return true; }
         try {
-          const { remaining } = await api.forgetCredential(rest[0]);
+          const { remaining, sessionsEnded, signedOut } = await api.forgetCredential(rest[0]);
+          // A synced passkey can be the one this device signed in with, in which
+          // case forgetting it signed this device out too.
+          if (signedOut) { setDevices(null); setPhase('auth'); return true; }
           if (devices) setDevices(await api.credentials());
+          const ended = sessionsEnded
+            ? `, ${sessionsEnded} session${sessionsEnded === 1 ? '' : 's'} signed out`
+            : '';
           setStatus(
             remaining === 0
-              ? 'passkey removed — none left; :enroll now, or the enroll code works again'
-              : `passkey removed — ${remaining} left`,
+              ? `passkey removed${ended} — none left; :enroll now, or the enroll code works again`
+              : `passkey removed${ended} — ${remaining} left`,
           );
         } catch (e: any) {
           setStatus(`could not remove: ${e?.message ?? 'unknown error'}`);

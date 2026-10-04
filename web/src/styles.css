@@ -596,6 +596,7 @@ label.btn { display: inline-block; cursor: pointer; }
 .devices-table td.devices-id { color: var(--amber); user-select: all; }
 .devices-table td.devices-label { color: var(--muted); }
 .devices-table td.devices-never { color: var(--risk); }
+.devices-table td.devices-none { color: var(--muted); }
 /* Scoped under td on purpose: a bare class loses to `.devices-table td` above,
    which is how the id and never colours silently fell back the first time. */
 .devices-table td .devices-otherdomain { color: var(--risk); }

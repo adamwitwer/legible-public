@@ -229,6 +229,17 @@ by kind, a stranger could overwrite the pending challenge and lock Adam out with
 credential at all. `ENROLL_CODE` now refuses to fall back to its dev value in production.
 Don't undo any of these to simplify a test; use `WORKER_CONCURRENCY=0` and a real code.
 
+**Sessions belong to the passkey that opened them (2026-10-04).** `sessions.credential_id`
+cascades from `credentials`, so `:forget` signs out every device that passkey opened —
+before migration 009 a lost phone's cookie outlived its forgotten passkey by up to
+`SESSION_DAYS`. A synced passkey is one credential on several devices, so forgetting it can
+sign out the caller too; the route reports `signedOut` and the client drops to the auth
+screen. `:logout others` ends every other session without touching passkeys, which is the
+right tool when the lost device shares a synced passkey with the ones you still have.
+Sessions from before 009 have a NULL link and are ended by any `:forget` except the
+caller's own, since nothing says which device they belong to. Any new way of issuing a
+session must pass the credential id to `issueSession`.
+
 **This repo is public. The archive it holds is not.**
 
 The four pages in `images/` are invented for this repo — real handwriting, fictional

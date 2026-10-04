@@ -7,6 +7,8 @@ export type Device = {
   usable: boolean;
   created_at: string;
   last_used_at: string | null;
+  /** Live sessions this passkey opened — what :forget would sign out. */
+  sessions: number;
 };
 
 const when = (iso: string | null) =>
@@ -24,7 +26,9 @@ export function Devices({ devices, onClose }: { devices: Device[]; onClose: () =
     <div className="devices">
       <div className="devices-head">
         <span>passkeys</span>
-        <span className="devices-hint">:forget &lt;id&gt; to remove · esc to close</span>
+        <span className="devices-hint">
+          :forget &lt;id&gt; to remove and sign out · :logout others · esc to close
+        </span>
       </div>
 
       {devices.length === 0 ? (
@@ -38,6 +42,7 @@ export function Devices({ devices, onClose }: { devices: Device[]; onClose: () =
               <th>label</th>
               <th>added</th>
               <th>last used</th>
+              <th>signed in</th>
             </tr>
           </thead>
           <tbody>
@@ -61,6 +66,9 @@ export function Devices({ devices, onClose }: { devices: Device[]; onClose: () =
                 <td data-label="added">{when(d.created_at)}</td>
                 <td data-label="last used" className={d.last_used_at ? '' : 'devices-never'}>
                   {when(d.last_used_at)}
+                </td>
+                <td data-label="signed in" className={d.sessions ? '' : 'devices-none'}>
+                  {d.sessions || '—'}
                 </td>
               </tr>
             ))}
