@@ -4,8 +4,36 @@ import type { Note } from './types';
 
 const CURSOR = 'sync_cursor';
 
-/** Push local edits, then pull everything newer than our cursor. */
-export async function sync(): Promise<{ pushed: number; pulled: number }> {
+type Result = { pushed: number; pulled: number };
+
+let running: Promise<Result> | null = null;
+let rerun: Promise<Result> | null = null;
+
+/**
+ * Push local edits, then pull everything newer than our cursor.
+ *
+ * One at a time. Sync starts from several places — the timer, the app coming
+ * back on screen or going off it, a note closing — and they overlap. A call that
+ * arrives mid-sync may carry an edit the running one read too early to include,
+ * so it waits and runs once more afterwards; every call arriving meanwhile shares
+ * that one rerun rather than queueing its own.
+ *
+ * `keepalive` is for the push made as the app goes to the background: it lets
+ * the request finish after iOS freezes the page.
+ */
+export function sync(opts: { keepalive?: boolean } = {}): Promise<Result> {
+  if (!running) {
+    running = syncOnce(opts).finally(() => { running = null; });
+    return running;
+  }
+  rerun ??= running.catch(() => undefined).then(() => {
+    rerun = null;
+    return sync(opts);
+  });
+  return rerun;
+}
+
+async function syncOnce(opts: { keepalive?: boolean }): Promise<Result> {
   let pushed = 0;
   let pulled = 0;
 
@@ -17,6 +45,7 @@ export async function sync(): Promise<{ pushed: number; pulled: number }> {
       // even appears to write them. The server ignores them regardless.
       const { saved } = await api.push(
         batch.map(({ dirty: _d, seq: _s, summary: _a, summary_body_hash: _b, summary_model: _m, summarized_at: _t, ...n }) => n),
+        opts,
       );
       await db.transaction('rw', db.notes, async () => {
         for (const row of saved as { id: string; seq: string }[]) {

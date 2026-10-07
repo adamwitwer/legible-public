@@ -39,7 +39,14 @@ export const api = {
     req(`/api/auth/credentials/${id}`, { method: 'DELETE' }),
 
   pull: (since: string) => req(`/api/sync?since=${encodeURIComponent(since)}`),
-  push: (notes: unknown[]) => req('/api/notes', { method: 'POST', body: JSON.stringify({ notes }) }),
+  push: (notes: unknown[], opts: { keepalive?: boolean } = {}) => {
+    const body = JSON.stringify({ notes });
+    // Browsers reject a keepalive request whose body tops 64KB, so a large push
+    // goes as an ordinary one — still dirty if the page freezes first, and sent
+    // again on the next sync.
+    const keepalive = !!opts.keepalive && new TextEncoder().encode(body).length < 60_000;
+    return req('/api/notes', { method: 'POST', body, keepalive });
+  },
   revisions: (id: string) => req(`/api/notes/${id}/revisions`),
   splitNote: (id: string, at: number) =>
     req(`/api/notes/${id}/split`, { method: 'POST', body: JSON.stringify({ at }) }),

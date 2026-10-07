@@ -64,6 +64,9 @@ export default function App() {
   // Closing a note re-runs the search, which resets the cursor. Park the id
   // here so the note you just left comes back highlighted instead of the top.
   const selectAfterSearch = useRef<string | null>(null);
+  // The latest local save, so a sync started as a note closes or the app goes to
+  // the background waits for it rather than pushing the note without it.
+  const pendingSave = useRef<Promise<unknown>>(Promise.resolve());
 
   // ---------------------------------------------------------------- boot
 
@@ -75,10 +78,10 @@ export default function App() {
     return n; // the boot path needs this now, not on the next render
   }, []);
 
-  const runSync = useCallback(async (quiet = false) => {
+  const runSync = useCallback(async (quiet = false, opts: { keepalive?: boolean } = {}) => {
     try {
       if (!quiet) setStatus('syncing…');
-      const { pushed, pulled } = await sync();
+      const { pushed, pulled } = await sync(opts);
       await refresh();
       setSynced(await lastSync());
       if (!quiet) setStatus(pushed || pulled ? `synced ↑${pushed} ↓${pulled}` : 'up to date');
@@ -111,8 +114,26 @@ export default function App() {
     if (phase !== 'ready') return;
     const id = window.setInterval(() => void runSync(true), 120_000);
     const onOnline = () => void runSync(true);
+    // A home-screen app on iOS is frozen in the background: the interval stops,
+    // `online` never fires, and coming back is a resume, not a boot. So an edit
+    // made on a commute and pocketed sat unpushed until the app happened to stay
+    // on screen for two minutes, and the laptop showed the old note. Sync on the
+    // way out — hidden is the last moment iOS gives the page — and on the way back.
+    //
+    // On window, not document: the editor flushes typing on document, and the
+    // event reaches document listeners first, so by the time this runs that save
+    // is in flight and pendingSave holds it.
+    const onVisibility = () => {
+      const keepalive = document.visibilityState === 'hidden';
+      void pendingSave.current.catch(() => undefined).then(() => runSync(true, { keepalive }));
+    };
     window.addEventListener('online', onOnline);
-    return () => { window.clearInterval(id); window.removeEventListener('online', onOnline); };
+    window.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [phase, runSync]);
 
   // -------------------------------------------------------------- search
@@ -334,7 +355,9 @@ export default function App() {
 
   const onEdit = useCallback(async (patch: NotePatch) => {
     if (!open) return;
-    const updated = await saveNote(open.id, patch);
+    const saving = saveNote(open.id, patch);
+    pendingSave.current = saving;
+    const updated = await saving;
     if (updated) { setOpen(updated); setCount(indexSize()); }
   }, [open]);
 
@@ -343,7 +366,13 @@ export default function App() {
     setOpen(null);
     // The prompt is not mounted while a note is open. Focus goes back to it from
     // the effect above once it returns — a focus() here would find nothing.
-  }, [open]);
+    //
+    // Closing a note is the natural end of an edit, so push it now rather than
+    // on the next timer. Not on every pause in typing: each applied push writes
+    // a revision, and that would bury the history. The editor's final save is
+    // still in flight here, so wait for it or the push goes without it.
+    void pendingSave.current.catch(() => undefined).then(() => runSync(true));
+  }, [open, runSync]);
 
   const onSplit = useCallback(async (at: number) => {
     if (!open) return;

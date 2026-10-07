@@ -38,6 +38,7 @@ export function Editor({
   const [revisions, setRevisions] = useState<{ id: string; body: string; saved_at: string }[] | null>(null);
   const [liveHash, setLiveHash] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
   const timer = useRef<number>(0);
 
   // Hash what is on screen, including typing not yet saved, so "stale" shows
@@ -82,6 +83,33 @@ export function Editor({
     setSaved(true);
   }
 
+  // Going to the background saves what is on screen, including a title being
+  // typed: iOS freezes the page with the autosave timer still pending and the
+  // field never blurred. Registered on document so it runs before App's window
+  // listener, which then pushes this save. One patch, not flush() then
+  // commitTitle(): saveNote reads the note and writes all of it back, so two
+  // saves racing would let the title's put drop the body's.
+  //
+  // The title only while its field has focus, the same moment a blur would
+  // commit it. `title` is reset per note, not when a typed note's title follows
+  // an edited first line, so comparing it otherwise would write the old title
+  // back and stop it following.
+  const onHidden = useRef(() => {});
+  onHidden.current = () => {
+    window.clearTimeout(timer.current);
+    const patch: NotePatch = {};
+    if (body !== note.body) patch.body = body;
+    const editingTitle = document.activeElement === titleRef.current;
+    if (editingTitle && (title.trim() || null) !== note.title) patch.title = title.trim() || null;
+    if (patch.body !== undefined || patch.title !== undefined) onChange(patch);
+    setSaved(true);
+  };
+  useEffect(() => {
+    const handler = () => { if (document.visibilityState === 'hidden') onHidden.current(); };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, []);
+
   /**
    * Title and date commit on blur or Enter rather than per keystroke: the server
    * snapshots a revision on every applied write, so debounced typing would bury
@@ -120,6 +148,7 @@ export function Editor({
     <div className="editor">
       <div className="editor-bar">
         <input
+          ref={titleRef}
           className="editor-title"
           value={title}
           placeholder="untitled"

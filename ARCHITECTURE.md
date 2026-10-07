@@ -270,8 +270,17 @@ Deliberately boring — one user across a few devices does not need CRDTs.
 - Server-side writes that are not edits — a summary — must not touch `updated_at`, or they
   would win that comparison against edits made while they ran. The `seq` trigger still
   carries them down.
-- The client syncs every two minutes and whenever the browser comes back online. Edits made
-  offline sit in the local replica marked dirty and are pushed on the next sync.
+- The client syncs every two minutes, whenever the browser comes back online, when a note is
+  closed, and whenever the app goes to the background or returns from it. Edits made offline
+  sit in the local replica marked dirty and are pushed on the next sync.
+- The visibility syncs are the ones that matter on a phone. iOS freezes a home-screen app in
+  the background — the interval stops, `online` never fires, and reopening is a resume, not a
+  boot — so before them an edit made on a commute and pocketed stayed on the phone until the
+  app happened to stay on screen for two minutes (2026-10-06). The push on the way out uses
+  `keepalive` so it can finish after the page is frozen.
+- Not on every pause in typing: each applied push writes a revision, so pushing per pause
+  would bury a note's history. `sync()` runs one at a time; calls that arrive mid-sync share
+  a single rerun, so an edit the running sync read too early to include still goes out.
 
 ---
 
