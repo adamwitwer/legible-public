@@ -65,6 +65,13 @@ export function Editor({
     if (el) el.setSelectionRange(el.value.length, el.value.length);
   }, [note.id]);
 
+  // A typed note's title follows its first line, so a body save can change it
+  // under the field. Keep the field in step, except while you are typing in it,
+  // where it holds your edit until blur or Enter commits it.
+  useEffect(() => {
+    if (document.activeElement !== titleRef.current) setTitle(note.title ?? '');
+  }, [note.title]);
+
   // Debounced autosave — the archive should never lose an edit to a closed tab.
   useEffect(() => {
     if (body === note.body) return;
@@ -91,9 +98,7 @@ export function Editor({
   // saves racing would let the title's put drop the body's.
   //
   // The title only while its field has focus, the same moment a blur would
-  // commit it. `title` is reset per note, not when a typed note's title follows
-  // an edited first line, so comparing it otherwise would write the old title
-  // back and stop it following.
+  // commit it.
   const onHidden = useRef(() => {});
   onHidden.current = () => {
     window.clearTimeout(timer.current);
@@ -150,6 +155,7 @@ export function Editor({
         <input
           ref={titleRef}
           className="editor-title"
+          autoComplete="off"
           value={title}
           placeholder="untitled"
           aria-label="note title"
@@ -163,6 +169,7 @@ export function Editor({
         <input
           type="date"
           className="editor-dateinput"
+          autoComplete="off"
           value={date}
           aria-label="date written"
           onChange={(e) => commitDate(e.target.value)}
@@ -242,6 +249,10 @@ export function Editor({
       <textarea
         ref={ref}
         className="editor-body"
+        // iOS Safari offers "AutoFill Contact" over the keyboard when it guesses
+        // a field belongs to a contact form — "title" reads to it as a job title.
+        // None of these do; the prompt says the same thing.
+        autoComplete="off"
         value={body}
         spellCheck
         placeholder="First line becomes the title. #tags work anywhere."
