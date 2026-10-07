@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { sql } from '../db/index.js';
 import { requireAuth } from './auth.js';
-import { findBoundaryPage, splitBody, titleOf } from '../lib/split.js';
+import { findBoundaryPage, keptTags, splitBody, titleOf } from '../lib/split.js';
 import { bodyHash, summarizeNote, SummaryRefused } from '../lib/summarize.js';
 import { env } from '../lib/env.js';
 
@@ -155,7 +155,11 @@ export default async function noteRoutes(app: FastifyInstance) {
           insert into note_revisions (note_id, title, body)
           values (${note.id}, ${note.title}, ${note.body})
         `;
-        await tx`update notes set body = ${head}, updated_at = now() where id = ${note.id}`;
+        // Each half keeps only the tags its own text carries — see keptTags.
+        await tx`
+          update notes set body = ${head}, tags = ${keptTags(note.tags, head)}, updated_at = now()
+          where id = ${note.id}
+        `;
         await tx`
           insert into notes (
             id, kind, title, body, body_ocr_raw, written_on, written_on_precision,
@@ -165,7 +169,7 @@ export default async function noteRoutes(app: FastifyInstance) {
             ${note.written_on},
             -- the date is the one it was absorbed under, not one it earned
             ${note.written_on ? 'sequence' : null},
-            ${note.tags}, ${note.kind === 'scan' ? 'done' : null}, now(), now()
+            ${keptTags(note.tags, tail)}, ${note.kind === 'scan' ? 'done' : null}, now(), now()
           )
         `;
         for (const [i, p] of carried.entries()) {

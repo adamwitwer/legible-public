@@ -204,6 +204,9 @@ ever needs to mean "when the photo was taken" for another reason, add an explici
 - **Tags are a pure function of the body.** Any body edit re-runs `deriveTags` and discards
   anything not in the text, so there is no way to set a tag from the UI that survives the next
   edit. Adding a "mark as todo" button means changing that rule first, not adding a writer.
+  The same holds for any server-side write that changes a body: split copied the whole
+  note's tags to both halves until 2026-10-07, so a TODO in one half showed on both. Each
+  half now keeps only the tags its own text carries (`keptTags` in `server/src/lib/split.ts`).
 - Derivation is **client-side on save**, so a note already holding "TODO" in its body stays
   untagged until it is next edited. Backfilling the archive means recomputing tags server-side,
   and `seq` bumps on UPDATE — a naive backfill would restamp every touched row and churn sync

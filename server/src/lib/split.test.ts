@@ -1,4 +1,4 @@
-import { findBoundaryPage, splitBody, titleOf } from './split.js';
+import { findBoundaryPage, keptTags, splitBody, titleOf } from './split.js';
 
 let passed = 0;
 let failed = 0;
@@ -52,6 +52,23 @@ check('matches a page whose raw transcript still carries struck text',
      { ocr_json: { blocks: [{ transcript: 'Turning ~~and~~ and turning\n- gyre' }] } }],
     'Turning and turning\n\n- gyre'),
   1);
+
+console.log('\nkeptTags');
+// The reported case: two notes scanned as one, the TODO in the second.
+const merged = 'Aug 1  Meeting Title\n\n- lorem ipsum\n\nAug 2  The Second Coming\n\nTODO find the falcon #poetry\n';
+const cut = splitBody(merged, merged.indexOf('Aug 2'))!;
+check('the half without the TODO loses the tag', keptTags(['todo', 'poetry'], cut.head), []);
+check('the half with it keeps it', keptTags(['todo', 'poetry'], cut.tail), ['todo', 'poetry']);
+check('#todo counts as the marker', keptTags(['todo'], 'a\n#todo'), ['todo']);
+check('a crossed-out TODO is not one', keptTags(['todo'], '~~TODO call~~ done'), []);
+check('a crossed-out #tag is gone', keptTags(['a'], '~~#a~~ b'), []);
+check('a half never gains a tag the note lacked', keptTags([], 'TODO #new'), []);
+check('tags match case-insensitively', keptTags(['plan'], 'see #Plan'), ['plan']);
+// deriveTags' cases from web/src/lib/search.test.ts — the #tag pattern above
+// mirrors TAG_RE there, so change one and these should change with it.
+check('hashtags are found', keptTags(['test', 'q3-plan'], 'a #test and #q3-plan here'), ['test', 'q3-plan']);
+check('mid-word hash is not a tag', keptTags(['5', 'real'], 'issue#5 and #real'), ['real']);
+check('lowercase todo in prose is not a task', keptTags(['todo'], 'nothing todo with it'), []);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

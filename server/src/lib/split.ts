@@ -4,6 +4,7 @@
  */
 
 import { stripStruck } from './struck.js';
+import { hasTodoMarker, TODO_TAG } from './todo.js';
 
 export type SplitText = { head: string; tail: string };
 
@@ -22,6 +23,26 @@ export function splitBody(body: string, at: number): SplitText | null {
 export function titleOf(text: string): string | null {
   const line = text.split('\n').find((l) => l.trim().length > 0) ?? '';
   return line.replace(/^#+\s*/, '').trim().slice(0, 120) || null;
+}
+
+/**
+ * Which of the original note's tags one half keeps.
+ *
+ * Tags are a pure function of the body, so a half keeps a tag only if its own
+ * text still carries it. Copying them whole put a TODO from one half on both,
+ * and the half without the word had no text to delete to clear it.
+ *
+ * Filters the original's tags rather than deriving afresh: a half is a piece of
+ * the whole, so it can lose a tag but never gain one. The #tag pattern MIRRORS
+ * TAG_RE in web/src/lib/notes.ts, struck text included; split.test.ts repeats
+ * deriveTags' cases from search.test.ts to hold them together.
+ */
+export function keptTags(tags: readonly string[], text: string): string[] {
+  const live = stripStruck(text);
+  const hashtags = new Set(
+    [...live.matchAll(/(?:^|\s)#([a-z0-9][a-z0-9_-]*)/gi)].map((m) => m[1]!.toLowerCase()),
+  );
+  return tags.filter((t) => (t === TODO_TAG ? hasTodoMarker(text) : hashtags.has(t)));
 }
 
 type PageLike = { ocr_json?: { blocks?: { transcript?: string }[] } | null };
