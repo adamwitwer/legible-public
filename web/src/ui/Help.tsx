@@ -12,6 +12,7 @@
 const COMMANDS: [string, string][] = [
   [':new', 'start a typed note — `:new some text` starts it with that text'],
   [':scan', 'open the scan screen (the ⌾ scan button goes straight to the camera)'],
+  [':todo', 'notes with an open TODO — the same as `is:todo`'],
   [':sync', 'push and pull now'],
   [':enroll', 'add a passkey for this device'],
   [':devices', 'list passkeys'],
@@ -79,7 +80,9 @@ export function Help({ onClose }: { onClose: () => void }) {
           <p className="help-prose">
             An open note lists its TODO lines at the top; tap one to go to it. In the list,
             a note with a TODO shows the task in place of its opening lines — so
-            <b> is:todo</b> reads as a task list.
+            <b> is:todo</b> reads as a task list. The <span className="help-mark">[ ] n</span> in
+            the header counts the notes with one open; tap it for that list, and again to
+            go back.
           </p>
         </div>
 

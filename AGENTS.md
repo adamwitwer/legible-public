@@ -42,7 +42,7 @@ Source of truth for requirements: `miniPRD.txt`. Design: `ARCHITECTURE.md`.
   cleaned in production with `npm run strip-struck -- --apply`; don't expect a re-run to find
   anything. The conventions each change depends on are under Conventions below.
 
-`npm test` runs ten suites, 270 assertions: query grammar and search, history, segmentation,
+`npm test` runs ten suites, 271 assertions: query grammar and search, history, segmentation,
 split, WebAuthn, enroll, TODO markers, struck text, and summaries (server and client).
 Phases 3–4 in `ARCHITECTURE.md`. See `README.md` for how to run it.
 

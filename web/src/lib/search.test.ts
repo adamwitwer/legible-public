@@ -1,7 +1,7 @@
 import { asCalendarDate, displayDate, localDate, toLocalDate } from './dates';
 import { deriveTags, deriveTitle, todoLines } from './notes';
 import { parseQuery } from './query';
-import { buildIndex, search, upsertInIndex } from './search';
+import { buildIndex, search, todoCount, upsertInIndex } from './search';
 import type { Note } from './types';
 
 const note = (o: Partial<Note>): Note => ({
@@ -111,6 +111,7 @@ check('is:todo selects only marked notes', search('is:todo').hits.length, 2);
 check('is:todo composes with a tag', search('is:todo tag:meeting').hits.map((h) => h.note.id), ['t3']);
 check('is:todo composes with text', search('is:todo invoice').hits.map((h) => h.note.id), ['t1']);
 check('tag:todo reaches the same notes', search('tag:todo').hits.length, 2);
+check('the header count is the is:todo set', todoCount(), search('is:todo').hits.length);
 
 console.log('\nTODO lines');
 const texts = (b: string) => todoLines(b).map((t) => t.text);

@@ -134,4 +134,11 @@ export function search(raw: string, limit = 60): { hits: Hit[]; parsed: ParsedQu
 }
 
 export const indexSize = () => corpus.size;
+
+/** Notes with an open TODO — the same set `is:todo` returns, unlimited. */
+export const todoCount = () => {
+  let n = 0;
+  for (const note of corpus.values()) if (note.tags.includes('todo')) n++;
+  return n;
+};
 export { isEmptyQuery };

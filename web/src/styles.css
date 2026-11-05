@@ -93,6 +93,13 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 }
 .bar-brand { color: var(--amber); }
 .bar-count { color: var(--muted); }
+/* Amber like the [ ] in the list rows, which is what it counts. The padding is
+   the tap target; the negative margin keeps it from widening the row. */
+.bar-todo { color: var(--amber); padding: 0.3rem 0.4rem; margin: -0.3rem -0.4rem; border-radius: 2px; }
+.bar-todo:hover { background: var(--panel); }
+.bar-todo[aria-pressed="true"] { background: var(--todo-ground); box-shadow: inset 0 0 0 1px var(--amber-dim); }
+.bar-todo-inert { color: var(--amber-dim); }
+.bar-todo-inert:hover { background: none; }
 .bar-rule { flex: 1; border-top: 1px solid var(--rule); }
 .bar-sync { color: var(--muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
 /* An actual message wraps onto its own line instead of ellipsising: the end of

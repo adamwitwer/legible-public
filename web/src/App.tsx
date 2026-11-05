@@ -10,7 +10,7 @@ import { api } from './lib/api';
 import { displayDate } from './lib/dates';
 import { allLiveNotes, db } from './lib/db';
 import { createNote, deleteNote, saveNote, type NotePatch } from './lib/notes';
-import { buildIndex, indexSize, search, type Hit } from './lib/search';
+import { buildIndex, indexSize, search, todoCount, type Hit } from './lib/search';
 import { lastSync, sync } from './lib/sync';
 import type { Note } from './lib/types';
 
@@ -56,6 +56,7 @@ export default function App() {
   // from it, which is what lets typing drop back out.
   const [histIndex, setHistIndex] = useState<number | null>(null);
   const [count, setCount] = useState(0);
+  const [todos, setTodos] = useState(0);
   const [synced, setSynced] = useState<Date | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
@@ -75,6 +76,7 @@ export default function App() {
     buildIndex(notes);
     const n = indexSize();
     setCount(n);
+    setTodos(todoCount());
     return n; // the boot path needs this now, not on the next render
   }, []);
 
@@ -228,6 +230,19 @@ export default function App() {
     setOpen(note);
   }, [refresh]);
 
+  /**
+   * The task list: `is:todo`, which already shows each note's TODO lines. Put
+   * in the prompt rather than held as a mode, so it reads as the query it is
+   * and composes — add `tag:meeting` and it narrows like any other search.
+   */
+  const showTodos = useCallback(() => {
+    setDevices(null);
+    setHelp(false);
+    setHistIndex(null);
+    setQuery('is:todo');
+    focusPrompt();
+  }, [focusPrompt]);
+
   async function runCommand(raw: string): Promise<boolean> {
     const [cmd, ...rest] = raw.slice(1).split(/\s+/);
     switch (cmd) {
@@ -305,6 +320,9 @@ export default function App() {
         }
         return true;
       }
+      case 'todo':
+        showTodos();
+        return true;
       case 'help':
         // A panel, not a status line — the old one-liner lived in the header
         // corner on the same 2.5s timer as "synced", which is no place to put
@@ -358,7 +376,9 @@ export default function App() {
     const saving = saveNote(open.id, patch);
     pendingSave.current = saving;
     const updated = await saving;
-    if (updated) { setOpen(updated); setCount(indexSize()); }
+    // Deleting the last TODO from the note on screen should take the count
+    // down as you type, not on the next sync.
+    if (updated) { setOpen(updated); setCount(indexSize()); setTodos(todoCount()); }
   }, [open]);
 
   const closeNote = useCallback(() => {
@@ -476,6 +496,29 @@ export default function App() {
       <header className="bar">
         <span className="bar-brand">notes ~</span>
         <span className="bar-count">{count.toLocaleString()} notes</span>
+        {/* Open TODOs at a glance, and one tap to the list of them — again to
+            go back. Absent at zero: nothing waiting needs no mark. Inert while
+            a note or the scan screen is up, because leaving the editor from
+            here would skip the save it makes on close. */}
+        {todos > 0 && (
+          !open && !capturing ? (
+            <button
+              className="bar-todo"
+              aria-pressed={query.trim() === 'is:todo'}
+              title={query.trim() === 'is:todo' ? 'back to all notes' : 'show notes with an open TODO'}
+              onClick={() => {
+                if (query.trim() === 'is:todo') { setQuery(''); focusPrompt(); }
+                else showTodos();
+              }}
+            >
+              [ ] {todos.toLocaleString()}
+            </button>
+          ) : (
+            <span className="bar-todo bar-todo-inert" title="notes with an open TODO">
+              [ ] {todos.toLocaleString()}
+            </span>
+          )
+        )}
         <span className="bar-rule" />
         {/* Which build is on the screen. On a phone there is no other way to
             tell a stale bundle from a change that did not work. */}
