@@ -88,6 +88,7 @@ without re-reading a page. On the first notebook the rule takes 56 notes to 34.
 | Typography | Monospace for chrome/prompt/metadata, **proportional for note bodies**. Amber phosphor on warm near-black, not green on black. |
 | Marginalia | **Captured at import, not surfaced further** — not searched, synced, or shown in the editor (Adam, 2026-09-14). He adapts his note-taking rather than have the app model its idiosyncrasies; don't propose features that do. |
 | Summaries | **Opt-in per note, never searched** — Adam's call (2026-09-14). Server-owned columns, never the body. `claude-opus-5` at low effort, same model as OCR. |
+| Margin TODOs | **Stay a bare `#todo` at the end of the body.** No anchor text written into it, and no backfill of past scans (Adam, 2026-11-05). The editor's TODO strip shows "marked in the page margin" for these, and that is enough. |
 
 ## Findings from real pages that the code must honor
 
