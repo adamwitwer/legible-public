@@ -28,7 +28,12 @@ import { STRUCK } from './struck.js';
  * containing "todo" into a task. `#todo` is the same claim in tag form.
  */
 const BARE = /\bTODO\b/;
-const TAGGED = /(?:^|\s)#todo\b/i;
+/**
+ * Ends where the client's tag pattern ends a tag name, not at \b: a tag may
+ * carry hyphens, so `#todo-list` is the tag "todo-list" on the client, and \b
+ * would have called it a TODO here — set at import, lost on the first edit.
+ */
+const TAGGED = /(?:^|\s)#todo(?![a-z0-9_-])/i;
 
 export function hasTodoMarker(text: string): boolean {
   const live = text.replace(STRUCK, ' ');

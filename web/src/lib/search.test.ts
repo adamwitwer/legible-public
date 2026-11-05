@@ -97,6 +97,9 @@ check('a struck TODO is a task abandoned', deriveTags('~~TODO~~ handled'), []);
 check('a struck tag is taken back', deriveTags('~~#old~~ #new'), ['new']);
 check('a struck TODO does not suppress a live one', deriveTags('~~TODO~~ then TODO'), ['todo']);
 check('todo joins other tags', deriveTags('#meeting TODO'), ['meeting', 'todo']);
+check('a longer tag is not the todo tag', deriveTags('see #todo-list').includes('todo'), false);
+check('nor is a trailing hyphen', deriveTags('#todo- later').includes('todo'), false);
+check('punctuation still ends the tag', deriveTags('done? #todo.').includes('todo'), true);
 
 console.log('\nis:todo filter');
 buildIndex([

@@ -18,6 +18,9 @@ check('lowercase todo in prose is not a task', hasTodoMarker('nothing todo with 
 check('TODO inside a word does not count', hasTodoMarker('TODOS and MASTODON'), false);
 check('a struck TODO is a task abandoned', hasTodoMarker('~~TODO~~ handled'), false);
 check('a struck one does not suppress a live one', hasTodoMarker('~~TODO~~ then TODO'), true);
+check('a longer tag is not the todo tag', hasTodoMarker('see #todo-list'), false);
+check('nor is a trailing hyphen', hasTodoMarker('#todo- later'), false);
+check('punctuation still ends the tag', hasTodoMarker('done? #todo.'), true);
 check('empty body', hasTodoMarker(''), false);
 check('multiline body', hasTodoMarker('a line\nTODO ring back\nanother'), true);
 
