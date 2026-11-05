@@ -684,7 +684,7 @@ function Results({
             {h.note.title ?? <em className="dim">untitled</em>}
           </span>
           <span className="hit-kind">{h.note.kind}</span>
-          <span className="hit-snippet">{h.snippet}</span>
+          <span className={`hit-snippet${h.todo ? ' hit-snippet-todo' : ''}`}>{h.snippet}</span>
         </button>
       ))}
     </div>

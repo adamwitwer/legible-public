@@ -76,6 +76,11 @@ export function Help({ onClose }: { onClose: () => void }) {
             word is how you check it off; there is no separate checked state. A cleared
             TODO comes back from <b>history</b> in the note.
           </p>
+          <p className="help-prose">
+            An open note lists its TODO lines at the top; tap one to go to it. In the list,
+            a note with a TODO shows the task in place of its opening lines — so
+            <b> is:todo</b> reads as a task list.
+          </p>
         </div>
 
         <div className="help-section">

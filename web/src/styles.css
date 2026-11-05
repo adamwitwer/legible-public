@@ -23,6 +23,8 @@
   --muted: #8a7a61;
   --ok: #8fbf6f;
   --risk: #e0705f;
+  /* amber at ~7% over --ground: a TODO reads as marked without a second hue */
+  --todo-ground: #261d10;
 
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -145,6 +147,9 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The task itself, in place of an excerpt: body text, not muted, since it is
+   what the row is being read for. */
+.hit-snippet-todo { color: var(--text); }
 
 /* --------------------------------------------------------------- prompt */
 
@@ -265,6 +270,43 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 /* The grid's flexible row: an optional summary above a body that takes the rest. */
 .editor-main { display: flex; flex-direction: column; gap: 0.7rem; min-height: 0; }
 .editor-main .editor-body { flex: 1 1 auto; height: auto; min-height: 6rem; }
+
+/* Open TODOs, lifted out of the body. Full amber and a tinted ground, where the
+   summary below is dim and bare: these are your words and they want doing.
+   Capped like the summary so a long list cannot push the body off a phone. */
+.todos {
+  flex: 0 0 auto;
+  max-height: 24vh;
+  overflow-y: auto;
+  border-left: 2px solid var(--amber);
+  background: var(--todo-ground);
+  padding: 0.4rem 0.7rem 0.4rem 0.8rem;
+}
+.todos-label { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber); padding-bottom: 0.15rem; }
+.todos-list { list-style: none; margin: 0; padding: 0; }
+.todo-line {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.25rem 0;
+  font-family: var(--sans);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+/* The clamp lives on the text, not the button: on the button, a third line
+   shows through its padding. */
+.todo-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.todo-text::before { content: "[ ] "; font-family: var(--mono); color: var(--amber); }
+.todo-line:hover { color: var(--amber); }
+.todo-line-margin { color: var(--muted); font-style: italic; }
 
 /* Set apart from the body on purpose — these are not your words — and capped,
    so on a phone a long summary cannot push the text you are editing away. */
@@ -401,6 +443,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   }
   /* a little height so these are tappable, not just clickable */
   .editor-actions .linkish { padding: 0.3rem 0; }
+  .todo-line { padding: 0.4rem 0; }
   /* first in the row: if anything else ever overflows to the right, the way
      back must still be the part you can reach */
   .editor-actions .editor-back { order: -1; color: var(--amber); }

@@ -1,5 +1,5 @@
 import { asCalendarDate, displayDate, localDate, toLocalDate } from './dates';
-import { deriveTags, deriveTitle } from './notes';
+import { deriveTags, deriveTitle, todoLines } from './notes';
 import { parseQuery } from './query';
 import { buildIndex, search, upsertInIndex } from './search';
 import type { Note } from './types';
@@ -108,6 +108,37 @@ check('is:todo selects only marked notes', search('is:todo').hits.length, 2);
 check('is:todo composes with a tag', search('is:todo tag:meeting').hits.map((h) => h.note.id), ['t3']);
 check('is:todo composes with text', search('is:todo invoice').hits.map((h) => h.note.id), ['t1']);
 check('tag:todo reaches the same notes', search('tag:todo').hits.length, 2);
+
+console.log('\nTODO lines');
+const texts = (b: string) => todoLines(b).map((t) => t.text);
+check('finds the marked line', texts('Meeting\nchase the invoice TODO\nother'), ['chase the invoice TODO']);
+check('#todo form too', texts('a\nbook room #todo'), ['book room #todo']);
+check('every marked line', texts('TODO one\nnot this\n#todo two'), ['TODO one', '#todo two']);
+check('a marker alone takes the next line', texts('TODO:\n\n  call Priya\nlater'), ['call Priya']);
+check("a scan's appended marker has no text", texts('notes here\n\n#todo\n'), ['']);
+check('a struck TODO is not a line', texts('~~TODO~~ done\nTODO live'), ['TODO live']);
+check('struck text is left out of the shown line', texts('TODO ~~old~~ new'), ['TODO new']);
+check('prose todo is not a line', texts('nothing todo with it'), []);
+const offs = todoLines('first\n~~x~~ TODO here');
+check('offsets index the real body', 'first\n~~x~~ TODO here'.slice(offs[0]!.start, offs[0]!.end), '~~x~~ TODO here');
+// The [ ] beside a title and the strip in the editor must never disagree.
+for (const b of ['TODO', '~~a\nTODO~~ b', 'x #todo-list', '#TODO', 'a\n#todo', 'TODOS', '~~TODO~~ then TODO', 'MASTODON #todo']) {
+  check(`lines agree with the tag: ${JSON.stringify(b)}`, todoLines(b).length > 0, deriveTags(b).includes('todo'));
+}
+
+console.log('\nTODO snippets');
+buildIndex([
+  note({ id: 's1', title: 'standup', body: 'standup\nlots of talk\nTODO send the deck\nmore talk about budget', tags: ['todo'] }),
+  note({ id: 's2', title: 'scan', kind: 'scan', body: 'page text about budget\n\n#todo\n', tags: ['todo'] }),
+  note({ id: 's3', title: 'plain', body: 'plain\nbudget talk', tags: [] }),
+]);
+const hit = (q: string, id: string) => search(q).hits.find((h) => h.note.id === id)!;
+check('a browse shows the task', [hit('', 's1').snippet, hit('', 's1').todo], ['TODO send the deck', true]);
+check('is:todo shows the task', hit('is:todo', 's1').snippet, 'TODO send the deck');
+check('is:todo with words still shows the task', hit('is:todo budget', 's1').todo, true);
+check('a word search keeps the excerpt', hit('budget', 's1').todo, false);
+check('a margin-only scan falls back to the excerpt', [hit('is:todo', 's2').todo, hit('is:todo', 's2').snippet.startsWith('page text')], [false, true]);
+check('a note with no TODO is unchanged', hit('', 's3').todo, false);
 
 console.log('\nincremental index upkeep');
 buildIndex(notes);

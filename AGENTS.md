@@ -42,7 +42,7 @@ Source of truth for requirements: `miniPRD.txt`. Design: `ARCHITECTURE.md`.
   cleaned in production with `npm run strip-struck -- --apply`; don't expect a re-run to find
   anything. The conventions each change depends on are under Conventions below.
 
-`npm test` runs ten suites, 231 assertions: query grammar and search, history, segmentation,
+`npm test` runs ten suites, 264 assertions: query grammar and search, history, segmentation,
 split, WebAuthn, enroll, TODO markers, struck text, and summaries (server and client).
 Phases 3–4 in `ARCHITECTURE.md`. See `README.md` for how to run it.
 
@@ -165,6 +165,10 @@ ever needs to mean "when the photo was taken" for another reason, add an explici
   than as a bug. There is no module shared across the two workspaces, so the mirror is held by
   matching cases in `todo.test.ts` and `search.test.ts` — change one regex and the other suite
   fails. Both strip `~~struck~~` text first: a crossed-out TODO is a task abandoned.
+  `todoLines` (same file as `deriveTags`) finds the marked lines for the editor's TODO strip
+  and the list snippet. It calls `deriveTags` on each line rather than holding a regex of its
+  own, so a [ ] and the strip cannot disagree. A test in `search.test.ts` pins that. A scan's
+  margin TODO is a bare `#todo` at the end of the body, so it has no task text to show.
 - **Never set `updated_at` when writing a summary.** Sync is last-write-wins on `updated_at`: a
   push that is not newer than the stored row is kept as a revision and not applied. A summary
   write that bumped it would make anything typed while the model was working lose that

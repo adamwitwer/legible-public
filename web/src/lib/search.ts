@@ -2,12 +2,15 @@ import MiniSearch from 'minisearch';
 import { displayDate } from './dates';
 import type { Note } from './types';
 import { isEmptyQuery, parseQuery, type ParsedQuery } from './query';
+import { todoLines } from './notes';
 
 export type Hit = {
   note: Note;
   score: number;
   /** Body excerpt around the first match, for the result line. */
   snippet: string;
+  /** The snippet is the note's TODO lines rather than an excerpt. */
+  todo: boolean;
   terms: string[];
 };
 
@@ -73,7 +76,22 @@ function makeSnippet(body: string, terms: string[]): string {
   return (start > 0 ? '…' : '') + flat.slice(start, start + 140);
 }
 
-const byRecency = (a: Note, b: Note) => {
+/**
+ * What the result line shows. A note with an open TODO shows the task itself
+ * when there is nothing more specific to show — a browse, or `is:todo`, which
+ * asks for tasks even alongside words. A search for words otherwise keeps the
+ * excerpt around the match. A scan whose only TODO was in the margin has no
+ * task text in its body, so it falls back to the excerpt too.
+ */
+function snippetFor(note: Note, terms: string[], q: ParsedQuery): { snippet: string; todo: boolean } {
+  if (note.tags.includes('todo') && (q.todo || !terms.length)) {
+    const tasks = todoLines(note.body).map((t) => t.text).filter(Boolean);
+    if (tasks.length) return { snippet: tasks.join('  ·  '), todo: true };
+  }
+  return { snippet: makeSnippet(note.body, terms), todo: false };
+}
+
+const byRecency =(a: Note, b: Note) => {
   const ad = displayDate(a);
   const bd = displayDate(b);
   return bd.localeCompare(ad) || b.updated_at.localeCompare(a.updated_at);
@@ -89,7 +107,7 @@ export function search(raw: string, limit = 60): { hits: Hit[]; parsed: ParsedQu
       .filter((n) => matchesFilters(n, parsed))
       .sort(byRecency)
       .slice(0, limit)
-      .map((note) => ({ note, score: 0, snippet: makeSnippet(note.body, parsed.phrases), terms: parsed.phrases }));
+      .map((note) => ({ note, score: 0, ...snippetFor(note, parsed.phrases, parsed), terms: parsed.phrases }));
     return { hits, parsed };
   }
 
@@ -108,12 +126,8 @@ export function search(raw: string, limit = 60): { hits: Hit[]; parsed: ParsedQu
   for (const r of results) {
     const note = corpus.get(r.id as string);
     if (!note || !matchesFilters(note, parsed)) continue;
-    hits.push({
-      note,
-      score: r.score,
-      snippet: makeSnippet(note.body, [...r.terms, ...parsed.phrases]),
-      terms: [...r.terms, ...parsed.phrases],
-    });
+    const terms = [...r.terms, ...parsed.phrases];
+    hits.push({ note, score: r.score, ...snippetFor(note, terms, parsed), terms });
     if (hits.length >= limit) break;
   }
   return { hits, parsed };

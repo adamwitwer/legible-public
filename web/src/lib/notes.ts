@@ -71,6 +71,49 @@ export function deriveTags(body: string): string[] {
   return [...tags];
 }
 
+export type TodoLine = {
+  /** Offsets of the marked line in the body, for putting the cursor on it. */
+  start: number;
+  end: number;
+  /**
+   * What the task says: the line itself, or — when the line is nothing but the
+   * marker, as in "TODO:" over a list — the next non-empty line. Empty when
+   * nothing follows, which is how a scan's margin TODO arrives: appended to the
+   * end of the body as a bare #todo (see appendTodoMarker in server/src/lib/todo.ts).
+   */
+  text: string;
+};
+
+const MARKER_ONLY = /^(?:#todo|TODO)[\s:.\-–—]*$/i;
+
+/**
+ * The lines of a body that carry an open TODO.
+ *
+ * Built from deriveTags line by line, never from a regex of its own, so that a
+ * note shows a [ ] exactly when this finds something — struck text is blanked
+ * in place first so offsets still index the real body.
+ */
+export function todoLines(body: string): TodoLine[] {
+  const live = body.replace(STRUCK_RE, (m) => m.replace(/[^\n]/g, ' '));
+  const lines = live.split('\n');
+  const out: TodoLine[] = [];
+  let start = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]!;
+    if (deriveTags(raw).includes('todo')) {
+      const line = raw.replace(/\s+/g, ' ').trim();
+      let text = line;
+      if (MARKER_ONLY.test(line)) {
+        const next = lines.slice(i + 1).find((l) => l.trim().length > 0);
+        text = next ? next.replace(/\s+/g, ' ').trim() : '';
+      }
+      out.push({ start, end: start + raw.length, text });
+    }
+    start += raw.length + 1;
+  }
+  return out;
+}
+
 /** What an edit may change. Anything omitted is left alone. */
 export type NotePatch = {
   body?: string;

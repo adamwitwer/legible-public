@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { bodyHash } from '../lib/summary';
-import type { NotePatch } from '../lib/notes';
+import { todoLines, type NotePatch, type TodoLine } from '../lib/notes';
 import type { Note } from '../lib/types';
 
 /** How a date was arrived at, when it was not simply written on the page. */
@@ -11,6 +11,46 @@ const PRECISION_HINT: Record<string, string> = {
   month: 'the page named a month, not a day',
   year: 'the page named only a year',
 };
+
+/**
+ * Scroll a textarea so the line holding `offset` is its first visible line.
+ *
+ * A textarea reports no geometry for its text, so this lays the text before the
+ * offset out in an invisible copy with the same width, font and padding, and
+ * reads where it ends. Scrolling to the caret is not something browsers agree
+ * on, and on a phone there is no caret: focusing would raise the keyboard over
+ * the very line being jumped to.
+ */
+function scrollToOffset(el: HTMLTextAreaElement, offset: number) {
+  const cs = getComputedStyle(el);
+  const mirror = document.createElement('div');
+  const s = mirror.style;
+  s.position = 'absolute';
+  s.visibility = 'hidden';
+  s.top = '0';
+  s.left = '-9999px';
+  s.boxSizing = 'content-box';
+  s.whiteSpace = 'pre-wrap';
+  s.overflowWrap = 'break-word';
+  s.paddingTop = cs.paddingTop;
+  s.paddingLeft = cs.paddingLeft;
+  s.paddingRight = cs.paddingRight;
+  // clientWidth leaves out the border and any scrollbar, which is the width
+  // the text actually wraps at.
+  s.width = `${el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)}px`;
+  s.font = cs.font;
+  s.letterSpacing = cs.letterSpacing;
+  s.wordSpacing = cs.wordSpacing;
+  s.tabSize = cs.tabSize;
+  mirror.textContent = el.value.slice(0, offset);
+  const mark = document.createElement('span');
+  mark.textContent = '​';
+  mirror.appendChild(mark);
+  document.body.appendChild(mirror);
+  const top = mark.offsetTop;
+  mirror.remove();
+  el.scrollTop = Math.max(0, top - parseFloat(cs.paddingTop));
+}
 
 export function Editor({
   note,
@@ -139,6 +179,24 @@ export function Editor({
     onChange({ written_on: next || null });
   }
 
+  // From what is on screen, so the list follows typing rather than autosave.
+  const todos = useMemo(() => todoLines(body), [body]);
+
+  /**
+   * Bring a TODO's line to the top of the body. With a keyboard, also select
+   * it, which is the highlight a textarea can't otherwise give one line. On a
+   * touch screen, scroll only — focus would pop the keyboard over the line.
+   */
+  function jumpTo(t: TodoLine) {
+    const el = ref.current;
+    if (!el) return;
+    if (!window.matchMedia('(pointer: coarse)').matches) {
+      el.focus({ preventScroll: true });
+      el.setSelectionRange(t.start, t.end);
+    }
+    scrollToOffset(el, t.start);
+  }
+
   async function loadRevisions() {
     if (revisions) return setRevisions(null);
     try {
@@ -220,6 +278,29 @@ export function Editor({
           layout is unchanged for the notes that have no summary — which is
           most of them, since a summary only exists when asked for. */}
       <div className="editor-main">
+      {/* Open tasks first: they are what you came back to the note for. Read
+          from the body on every render, so there is nothing to keep in step —
+          deleting the marker from the text is what takes a line off this list. */}
+      {todos.length > 0 && (
+        <section className="todos" aria-label="open todos">
+          <div className="todos-label">todo · {todos.length}</div>
+          <ul className="todos-list">
+            {todos.map((t) => (
+              <li key={t.start}>
+                <button
+                  className={`todo-line${t.text ? '' : ' todo-line-margin'}`}
+                  title="go to this line"
+                  onClick={() => jumpTo(t)}
+                >
+                  <span className="todo-text">
+                    {t.text || (note.kind === 'scan' ? 'marked in the page margin' : 'TODO')}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {(note.summary || summarizing) && (
         <section className={`summary${stale ? ' summary-is-stale' : ''}`} aria-label="summary">
           <div className="summary-head">
